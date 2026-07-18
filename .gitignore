@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.venv/
+venv/
+dist/
+build/
+.DS_Store
+
+# Device credentials / local captures — never commit these
+*.env
+.env
+notes/local/
+captures/
