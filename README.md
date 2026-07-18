@@ -24,8 +24,10 @@ what `inkbridge` builds on vs. what it adds.
 `inkbridge` is an orchestration layer, not a from-scratch reimplementation.
 It wraps existing libraries for parsing and transport, and adds the missing
 merge/chain logic and an agent-facing interface on top. See
-[`docs/architecture.md`](docs/architecture.md) for the full design and
-[`docs/roadmap.md`](docs/roadmap.md) for build phases.
+[`docs/architecture.md`](docs/architecture.md) for the full design,
+[`docs/note-format.md`](docs/note-format.md) for what's actually known about
+the `.note` format and why, and [`docs/roadmap.md`](docs/roadmap.md) for
+build phases.
 
 ```
             ┌─────────────┐

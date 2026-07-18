@@ -31,6 +31,18 @@ Repo structure, ecosystem survey, architecture doc, packaging.
   with `pypdf`) since it needs no new format-writing code.
 - `inkbridge merge base.pdf notes.note -o combined.pdf`.
 
+## Phase 1.5 — Targeted reads
+
+- Confirm against real notebook files whether page-level change detection
+  (hash/timestamp reachable without decoding stroke data) is actually
+  possible — see
+  [`note-format.md`](note-format.md#implication-targeted-reads-for-latency).
+- `convert/targeted.py`: decode a single page via `supernotelib`'s
+  `convert(page_number)` and inspect a bounding-box region for ink presence
+  — a cheap "was this checkbox marked" primitive, no OCR/VLM call needed.
+- Design `convert/notebook.py`'s API so per-page/region access is
+  first-class now, rather than retrofitted once Phase 4 needs it.
+
 ## Phase 4 — Agent-facing surface
 
 - Decide: own MCP server, or extend `allenporter/supernote`'s existing one.
@@ -38,7 +50,9 @@ Repo structure, ecosystem survey, architecture doc, packaging.
   [`architecture.md`](architecture.md#the-agent-loop-target-end-state):
   agent pushes → human annotates → agent pulls and reads back.
 - OCR/VLM transcription of annotations (likely via `sn2md` as a subprocess —
-  see [licensing notes](ecosystem.md#licensing-notes)).
+  see [licensing notes](ecosystem.md#licensing-notes)) for full-content
+  reads; use the Phase 1.5 targeted-read primitive instead for cheap
+  yes/no polling (e.g. "has this checkbox been marked yet").
 
 ## Non-goals (for now)
 
