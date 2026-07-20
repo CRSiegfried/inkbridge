@@ -32,9 +32,14 @@ STRIP_TOP = 2340
 STRIP_SAFE_BOTTOM = 2460
 ROWS_PER_PAGE = (STRIP_TOP - 40 - CONTENT_TOP) // ROW  # 26
 
-# Checkbox/ack cell: generous fixed geometry so the coverage threshold is
-# calibrated once per template, not per document (0012 finding 8).
-CHECK_CELL_W = 400
+# Tickable glyph boxes (checkbox/ack/choice): the manifest cell is the
+# printed box plus GLYPH_PAD, not the full label band. Calibrated on the
+# first device sampler (2026-07-20): a flamboyant checkmark's tail sweeping
+# through the *neighboring* row read 0.63% over the old full-width band (a
+# false ANSWERED) but exactly 0.0000 over the padded box, while real
+# in-box checks read 4-8%. The box is the affordance; ink must touch it.
+GLYPH_BOX = 90
+GLYPH_PAD = 20
 
 # Trigger slots: page k's "capture this page" box sits at slot k — the
 # positional page-identity fiducial. Fixed command boxes live at the right.

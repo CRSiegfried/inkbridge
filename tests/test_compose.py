@@ -170,8 +170,13 @@ def test_long_checkbox_label_wraps_to_second_line(tmp_path):
     arr = np.asarray(pdf[0].render(scale=4).to_pil().convert("L"))
 
     def second_line_band(cell):
+        # cell bbox is the padded glyph box; recover the row top / left
+        # edge the label offsets are drawn from (box at x0+40, top+35).
+        from inkbridge.compose.geometry import GLYPH_PAD
+
         x, y, _, _ = cell["bbox_norm"]
-        px, py = int(x * 1920), int(y * 2560)
+        px = int(x * 1920) + GLYPH_PAD - 40
+        py = int(y * 2560) + GLYPH_PAD - 35
         return arr[py + 112 : py + 150, px + 180 : px + 1400]
 
     short_cell, long_cell = (c for c in res.cells if c["type"] == "checkbox")

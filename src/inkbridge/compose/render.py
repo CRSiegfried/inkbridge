@@ -20,7 +20,6 @@ from .geometry import (
     BLACK,
     CANVAS_H,
     CANVAS_W,
-    CHECK_CELL_W,
     CMD_PITCH,
     CMD_X0,
     CONTENT_TOP,
@@ -28,6 +27,8 @@ from .geometry import (
     CONTENT_X0,
     CONTENT_X1,
     FAINT,
+    GLYPH_BOX,
+    GLYPH_PAD,
     GRAY,
     PAGE_H_PT,
     PAGE_W_PT,
@@ -392,7 +393,7 @@ class Renderer:
         self._ensure(2)
         top = self._y()
         x0 = CONTENT_X0 + min(depth, 2) * 60
-        gx, gy, gs = x0 + 40, top + 35, 90
+        gx, gy, gs = x0 + 40, top + 35, GLYPH_BOX
         self.px.rect(gx, gy, gs, gs, lw=4.0)
         self.px.line(x0, top + 160, CONTENT_X1, top + 160, lw=1.5, stroke=FAINT)
         # Long labels wrap onto a second line inside the same 2-row cell;
@@ -407,7 +408,14 @@ class Renderer:
                 lines = [lines[0], _fit(" ".join(lines[1:]), BODY, 15.0, max_w)]
             self.px.text(tx, top + 68, lines[0], 15.0, BODY)
             self.px.text(tx, top + 132, lines[1], 15.0, BODY)
-        self._add_cell(ctype, label, x0, top, CHECK_CELL_W, 2 * ROW)
+        # Cell = padded glyph box, not the label band: ink from a neighbor
+        # row's exuberant checkmark must not read as this cell's answer
+        # (device-calibrated 2026-07-20, see geometry.GLYPH_PAD).
+        self._add_cell(
+            ctype, label,
+            gx - GLYPH_PAD, gy - GLYPH_PAD,
+            GLYPH_BOX + 2 * GLYPH_PAD, GLYPH_BOX + 2 * GLYPH_PAD,
+        )
         self.row += 2
 
     def _choice(self, b: Choice) -> None:
@@ -429,13 +437,15 @@ class Renderer:
             top = self._y()
             for j, opt in enumerate(chunk):
                 sx = CONTENT_X0 + j * slot_w
-                self.px.rect(sx + 30, top + 35, 90, 90, lw=4.0)
+                bx, by = sx + 30, top + 35
+                self.px.rect(bx, by, GLYPH_BOX, GLYPH_BOX, lw=4.0)
                 self.px.text(
                     sx + 150, top + 98, _fit(opt, BODY, 13.0, slot_w - 190), 13.0, BODY
                 )
                 self._add_cell(
                     "choice", f"{b.label}: {opt}",
-                    sx + 10, top + 5, slot_w - 40, 150,
+                    bx - GLYPH_PAD, by - GLYPH_PAD,
+                    GLYPH_BOX + 2 * GLYPH_PAD, GLYPH_BOX + 2 * GLYPH_PAD,
                     id_=f"choice.{_slug(b.label)}.{_slug(opt)}",
                 )
             self.row += 2
