@@ -71,6 +71,24 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None) -> No
 
 
 @main.command()
+@click.argument("remote_paths", nargs=-1, required=True)
+@click.confirmation_option(
+    prompt="Delete these files from the private cloud (and, on sync, the device)?")
+def rm(remote_paths: tuple[str, ...]) -> None:
+    """Delete files from the private cloud (e.g. Document/f.pdf)."""
+    from inkbridge.transport.private_cloud import PCClient
+
+    by_folder: dict[str, list[str]] = {}
+    for rp in remote_paths:
+        folder, name = _split_remote(rp)
+        by_folder.setdefault(folder, []).append(name)
+    client = PCClient.from_env()
+    for folder, names in by_folder.items():
+        for name in client.delete(folder, names):
+            click.echo(f"Deleted {folder}/{name}")
+
+
+@main.command()
 @click.argument("manifest", type=click.Path(exists=True, path_type=Path))
 @click.argument("mark_file", type=click.Path(exists=True, path_type=Path))
 @click.option("--hash-store", "hash_store_path", type=click.Path(path_type=Path),

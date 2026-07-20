@@ -98,6 +98,14 @@ class FakeServer:
                 "id-" + body["fileName"])
             return ok()
 
+        if path == "/api/file/delete":
+            body = json.loads(request.content)
+            for fid in body["idList"]:
+                name = fid.removeprefix("id-")
+                self.rows.pop(name, None)
+                self.blobs.pop("inner-" + name, None)
+            return ok()
+
         if path == "/api/file/download/url":
             body = json.loads(request.content)
             name = body["id"].removeprefix("id-")
@@ -208,6 +216,27 @@ def test_push_same_name_maps_to_file_exists(client: PCClient, server: FakeServer
     f.write_bytes(b"x")
     with pytest.raises(FileExistsError, match="E0322"):
         client.push(f, "Document")
+
+
+def test_delete_removes_row_and_bytes(client: PCClient, server: FakeServer,
+                                      tmp_path: Path):
+    f = tmp_path / "doc.pdf"
+    f.write_bytes(b"x")
+    client.push(f, "Document")
+    assert client.delete("Document", "doc.pdf") == ["doc.pdf"]
+    assert server.rows == {} and server.blobs == {}
+    with pytest.raises(FileNotFoundError):
+        client.pull("Document", "doc.pdf", tmp_path / "out.pdf")
+
+
+def test_delete_missing_name_deletes_nothing(client: PCClient, server: FakeServer,
+                                             tmp_path: Path):
+    f = tmp_path / "doc.pdf"
+    f.write_bytes(b"x")
+    client.push(f, "Document")
+    with pytest.raises(FileNotFoundError, match="nope.pdf"):
+        client.delete("Document", ["doc.pdf", "nope.pdf"])
+    assert "doc.pdf" in server.rows  # all-or-nothing: nothing was deleted
 
 
 def test_pull_unlisted_file_raises(client: PCClient, tmp_path: Path):

@@ -203,6 +203,25 @@ class PCClient:
                     f"{folder}/{path.name} listed with md5 {row.get('md5')}, expected {md5}")
         return {"md5": md5, "size": len(blob), "folder": folder, "name": path.name}
 
+    def delete(self, folder: str, filenames: str | list[str]) -> list[str]:
+        """Delete files from a root folder (sncloud-dialect ``/file/delete``
+        with an idList). All names must exist in the listing; raises
+        FileNotFoundError naming the missing ones before deleting anything.
+        """
+        if isinstance(filenames, str):
+            filenames = [filenames]
+        did = self.dir_id(folder)
+        rows = {i["fileName"]: i for i in self.ls(did)}
+        missing = [n for n in filenames if n not in rows]
+        if missing:
+            raise FileNotFoundError(
+                f"not on server in {folder}: {', '.join(missing)}")
+        self._call(
+            "/file/delete",
+            {"directoryId": did, "idList": [rows[n]["id"] for n in filenames]},
+        )
+        return list(filenames)
+
     def pull(self, folder: str, filename: str, dest: Path) -> dict:
         """Download ``folder/filename`` to ``dest``.
 
