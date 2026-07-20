@@ -15,7 +15,7 @@ from pathlib import Path
 
 from reportlab.pdfgen import canvas as rl_canvas
 
-from .fonts import BODY, BOLD, ITALIC, register_fonts, width_px
+from .fonts import BODY, BOLD, BOLDITALIC, ITALIC, MONO, register_fonts, width_px
 from .geometry import (
     BLACK,
     CANVAS_H,
@@ -47,16 +47,25 @@ from .parser import (
     Checkbox,
     Choice,
     CodeBlock,
+    Comb,
     Heading,
     ListItem,
     Paragraph,
     Placeholder,
     Quote,
     Rule,
+    Slider,
+    Table,
 )
 
 # level -> (size_pt, rows, underline); all headings render bold.
 _HEADING_STYLE = {1: (22.0, 2, True), 2: (15.0, 2, False), 3: (12.5, 1, False)}
+
+# Inline-style name (parser.Segment) -> pinned font, per context. Quotes
+# render body text italic, so bold inside a quote becomes bold-italic.
+_FONTS = {"body": BODY, "bold": BOLD, "italic": ITALIC,
+          "bolditalic": BOLDITALIC, "code": MONO}
+_QUOTE_FONTS = {**_FONTS, "body": ITALIC, "bold": BOLDITALIC}
 
 
 def _slug(s: str) -> str:
@@ -105,6 +114,96 @@ def _wrap(text: str, font: str, size_pt: float, max_px: float) -> list[str]:
                 lines.extend(segs[:-1])
                 cur = segs[-1]
     lines.append(cur)
+    return lines
+
+
+# -- styled-segment wrap (0012 finding 9.1) --------------------------------
+# A "run" is a (text, font) pair; a wrapped line is a list of runs drawn
+# left-to-right. A "word" may span style boundaries (e.g. un**bold**ed), so
+# words are lists of runs too, split on whitespace across all segments.
+
+Run = tuple[str, str]
+
+
+def _segment_words(segments, fonts: dict[str, str]) -> list[list[Run]]:
+    words: list[list[Run]] = []
+    cur: list[Run] = []
+    for text, style in segments:
+        font = fonts.get(style, fonts["body"])
+        for piece in re.split(r"(\s+)", text):
+            if not piece:
+                continue
+            if piece.isspace():
+                if cur:
+                    words.append(cur)
+                    cur = []
+            elif cur and cur[-1][1] == font:
+                cur[-1] = (cur[-1][0] + piece, font)
+            else:
+                cur.append((piece, font))
+    if cur:
+        words.append(cur)
+    return words
+
+
+def _runs_width(runs: list[Run], size_pt: float) -> float:
+    return sum(width_px(text, font, size_pt) for text, font in runs)
+
+
+def _char_wrap_runs(word: list[Run], size_pt: float, max_px: float) -> list[list[Run]]:
+    lines: list[list[Run]] = []
+    cur: list[Run] = []
+    cur_w = 0.0
+    for text, font in word:
+        for ch in text:
+            cw = width_px(ch, font, size_pt)
+            if cur and cur_w + cw > max_px:
+                lines.append(cur)
+                cur, cur_w = [], 0.0
+            if cur and cur[-1][1] == font:
+                cur[-1] = (cur[-1][0] + ch, font)
+            else:
+                cur.append((ch, font))
+            cur_w += cw
+    lines.append(cur or [("", BODY)])
+    return lines
+
+
+def wrap_runs(segments, size_pt: float, max_px: float,
+              fonts: dict[str, str] = _FONTS) -> list[list[Run]]:
+    """Greedy word-wrap over styled segments; returns lines of draw runs.
+    The same metrics measure and draw, so wrapping cannot drift from the
+    manifest (0012 finding 9)."""
+    words = _segment_words(segments, fonts)
+    if not words:
+        return [[("", fonts["body"])]]
+    space_w = width_px(" ", fonts["body"], size_pt)
+    lines: list[list[Run]] = []
+    cur: list[Run] = []
+    cur_w = 0.0
+
+    def flush() -> None:
+        nonlocal cur, cur_w
+        if cur:
+            lines.append(cur)
+        cur, cur_w = [], 0.0
+
+    for word in words:
+        w = _runs_width(word, size_pt)
+        if cur and cur_w + space_w + w > max_px:
+            flush()
+        if not cur and w > max_px:
+            pieces = _char_wrap_runs(word, size_pt, max_px)
+            lines.extend(pieces[:-1])
+            cur = pieces[-1]
+            cur_w = _runs_width(cur, size_pt)
+            continue
+        if cur:
+            cur.append((" ", fonts["body"]))
+            cur_w += space_w
+        cur.extend(word)
+        cur_w += w
+    flush()
     return lines
 
 
@@ -210,7 +309,8 @@ class Renderer:
             if isinstance(b, Heading):
                 self._heading(b)
             elif isinstance(b, Paragraph):
-                self._para_lines(_wrap(b.text, BODY, 11.0, CONTENT_W - 60), CONTENT_X0 + 30)
+                self._para_lines(
+                    wrap_runs(b.segments, 11.0, CONTENT_W - 60), CONTENT_X0 + 30)
             elif isinstance(b, ListItem):
                 self._list_item(b)
             elif isinstance(b, Checkbox):
@@ -221,12 +321,18 @@ class Renderer:
                 self._choice(b)
             elif isinstance(b, Capture):
                 self._capture(b)
+            elif isinstance(b, Slider):
+                self._slider(b)
+            elif isinstance(b, Comb):
+                self._comb(b)
             elif isinstance(b, CodeBlock):
                 self._code(b)
+            elif isinstance(b, Table):
+                self._table(b)
             elif isinstance(b, Quote):
                 self._para_lines(
-                    _wrap(b.text, ITALIC, 11.0, CONTENT_W - 160),
-                    CONTENT_X0 + 100, font=ITALIC, bar=True,
+                    wrap_runs(b.segments, 11.0, CONTENT_W - 160, _QUOTE_FONTS),
+                    CONTENT_X0 + 100, bar=True,
                 )
             elif isinstance(b, Rule):
                 self._rule()
@@ -236,13 +342,20 @@ class Renderer:
         self._finish_page()
         self.c.save()
 
-    def _para_lines(self, lines, x, size=11.0, font=BODY, fill=BLACK, bar=False) -> None:
-        for ln in lines:
+    def _draw_runs(self, x: float, baseline: float, runs, size: float,
+                   fill=BLACK) -> None:
+        for text, font in runs:
+            self.px.text(x, baseline, text, size, font, fill=fill)
+            x += width_px(text, font, size)
+
+    def _para_lines(self, lines, x, size=11.0, fill=BLACK, bar=False) -> None:
+        """Deal wrapped lines of draw runs onto rows."""
+        for runs in lines:
             self._ensure(1)
             top = self._y()
             if bar:
                 self.px.line(CONTENT_X0 + 16, top, CONTENT_X0 + 16, top + ROW, lw=4.0, stroke=GRAY)
-            self.px.text(x, top + 56, ln, size, font, fill=fill)
+            self._draw_runs(x, top + 56, runs, size, fill=fill)
             self.row += 1
 
     def _heading(self, b: Heading) -> None:
@@ -259,14 +372,14 @@ class Renderer:
         indent = min(b.depth, 2) * 60
         mx = CONTENT_X0 + 30 + indent
         tx = mx + 70
-        lines = _wrap(b.text, BODY, 11.0, CONTENT_X1 - 30 - tx)
+        lines = wrap_runs(b.segments, 11.0, CONTENT_X1 - 30 - tx)
         first = True
-        for ln in lines:
+        for runs in lines:
             self._ensure(1)
             top = self._y()
             if first and b.marker:
                 self.px.text(mx, top + 56, b.marker, 11.0, BODY)
-            self.px.text(tx, top + 56, ln, 11.0, BODY)
+            self._draw_runs(tx, top + 56, runs, 11.0)
             first = False
             self.row += 1
 
@@ -331,12 +444,102 @@ class Renderer:
 
     def _code(self, b: CodeBlock) -> None:
         for raw in b.lines or [""]:
-            for ln in _char_wrap(raw, BODY, 9.5, CONTENT_W - 140):
+            for ln in _char_wrap(raw, MONO, 9.5, CONTENT_W - 140):
                 self._ensure(1)
                 top = self._y()
                 self.px.line(CONTENT_X0 + 16, top, CONTENT_X0 + 16, top + ROW, lw=4.0, stroke=FAINT)
-                self.px.text(CONTENT_X0 + 70, top + 52, ln, 9.5, BODY)
+                self.px.text(CONTENT_X0 + 70, top + 52, ln, 9.5, MONO)
                 self.row += 1
+
+    def _table(self, b: Table) -> None:
+        """Column-padded monospace rows; the mono font makes space-padding
+        line columns up. Header (first row) gets an underline. Static
+        content — no manifest cells."""
+        rows = [r for r in b.rows if r]
+        if not rows:
+            return
+        ncols = max(len(r) for r in rows)
+        widths = [0] * ncols
+        for r in rows:
+            for j, cell in enumerate(r):
+                widths[j] = max(widths[j], len(cell))
+        for idx, r in enumerate(rows):
+            text = "  ".join(
+                (r[j] if j < len(r) else "").ljust(widths[j]) for j in range(ncols)
+            ).rstrip()
+            for ln in _char_wrap(text, MONO, 9.5, CONTENT_W - 100):
+                self._ensure(1)
+                top = self._y()
+                self.px.text(CONTENT_X0 + 50, top + 52, ln, 9.5, MONO)
+                if idx == 0:
+                    self.px.line(
+                        CONTENT_X0 + 50, top + 66,
+                        CONTENT_X0 + 50 + width_px(ln, MONO, 9.5), top + 66,
+                        lw=1.5, stroke=GRAY,
+                    )
+                self.row += 1
+
+    def _slider(self, b: Slider) -> None:
+        """Analog slider (0012 F3, geometric tier): a printed track line;
+        readback maps the ink centroid's x-position along the track to a
+        continuous 0..1 value. The manifest cell carries the track span."""
+        self._ensure(3)
+        top = self._y()
+        self.px.text(
+            CONTENT_X0 + 30, top + 52,
+            _fit(b.label + ":", BODY, 11.0, CONTENT_W - 60), 11.0, BODY, fill=GRAY,
+        )
+        self.row += 1
+        top = self._y()
+        tx0, tx1 = CONTENT_X0 + 80, CONTENT_X1 - 80
+        ty = top + 70
+        self.px.line(tx0, ty, tx1, ty, lw=3.0)
+        for x in (tx0, tx1):
+            self.px.line(x, ty - 30, x, ty + 30, lw=3.0)
+        if b.left:
+            self.px.text(tx0, top + 145, _fit(b.left, BODY, 8.5, 400), 8.5, BODY, fill=GRAY)
+        if b.right:
+            right = _fit(b.right, BODY, 8.5, 400)
+            self.px.text(
+                tx1 - width_px(right, BODY, 8.5), top + 145, right, 8.5, BODY, fill=GRAY)
+        self._add_cell(
+            "slider", b.label,
+            CONTENT_X0, top, CONTENT_W, 2 * ROW,
+            id_=f"slider.{_slug(b.label)}",
+            track_norm={
+                "x0": round(tx0 / CANVAS_W, 6),
+                "x1": round(tx1 / CANVAS_W, 6),
+                "y": round(ty / CANVAS_H, 6),
+            },
+        )
+        self.row += 2
+
+    def _comb(self, b: Comb) -> None:
+        """Comb boxes (0012 F3): n joined character cells. Segmentation
+        raises later HWR accuracy; the manifest carries each box's bbox."""
+        box_w, box_h = 110, 130
+        n = max(1, min(b.n, (CONTENT_W - 80) // box_w))
+        self._ensure(3)
+        top = self._y()
+        self.px.text(
+            CONTENT_X0 + 30, top + 52,
+            _fit(b.label + ":", BODY, 11.0, CONTENT_W - 60), 11.0, BODY, fill=GRAY,
+        )
+        self.row += 1
+        top = self._y()
+        cx, cy = CONTENT_X0 + 40, top + 15
+        self.px.rect(cx, cy, n * box_w, box_h, lw=4.0)
+        for j in range(1, n):
+            self.px.line(cx + j * box_w, cy, cx + j * box_w, cy + box_h, lw=2.0)
+        boxes = [norm(cx + j * box_w, cy, box_w, box_h) for j in range(n)]
+        self._add_cell(
+            "comb", b.label,
+            cx - 20, cy - 20, n * box_w + 40, box_h + 40,
+            id_=f"comb.{_slug(b.label)}",
+            n=n,
+            boxes_norm=boxes,
+        )
+        self.row += 2
 
     def _rule(self) -> None:
         self._ensure(1)

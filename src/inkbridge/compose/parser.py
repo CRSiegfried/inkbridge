@@ -3,15 +3,22 @@
 Parsing is off-the-shelf (markdown-it-py); this module only walks the token
 stream into a flat list of blocks the row-grid renderer can deal onto rows.
 
+Inline styling survives as (text, style) segments on paragraph-like blocks
+(0012 finding 9.1): styles are "body" / "bold" / "italic" / "bolditalic" /
+"code", and the renderer maps them onto the pinned Vera variants. ``text``
+on those blocks stays the flattened concatenation, which is what directive
+detection and cell labels use.
+
 v1 degradation rules (0012 finding 8, "any markdown renders, nothing
 crashes"):
-- inline styling (bold/italic/links/inline code) is flattened to plain text;
-- tables and raw HTML become labeled placeholder blocks;
+- tables render as monospace column-padded text rows (no input cells);
+- raw HTML becomes a labeled placeholder block;
 - images flatten to "[image: alt]" text;
 - list nesting flattens past depth 2 (renderer clamps the indent).
 
 Extended directives are plain paragraphs, so any markdown editor accepts
 them:  {capture: label rows=6}   {choice: label | a | b | c}   {ack: label}
+{slider: label | low | high}   {comb: label n=8}
 A malformed directive stays a visible Paragraph rather than erroring.
 """
 
@@ -21,6 +28,13 @@ import re
 from dataclasses import dataclass, field
 
 from markdown_it import MarkdownIt
+
+# (text, style) segment; style is one of body/bold/italic/bolditalic/code.
+Segment = tuple[str, str]
+
+
+def _plain(text: str) -> list[Segment]:
+    return [(text, "body")] if text else []
 
 
 @dataclass
@@ -32,6 +46,11 @@ class Heading:
 @dataclass
 class Paragraph:
     text: str
+    segments: list[Segment] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not self.segments:
+            self.segments = _plain(self.text)
 
 
 @dataclass
@@ -39,6 +58,11 @@ class ListItem:
     text: str
     depth: int = 0
     marker: str = "•"  # empty marker = continuation line of an item
+    segments: list[Segment] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not self.segments:
+            self.segments = _plain(self.text)
 
 
 @dataclass
@@ -50,6 +74,11 @@ class Checkbox:
 @dataclass
 class Quote:
     text: str
+    segments: list[Segment] = field(default_factory=list)
+
+    def __post_init__(self):
+        if not self.segments:
+            self.segments = _plain(self.text)
 
 
 @dataclass
@@ -65,6 +94,11 @@ class Rule:
 @dataclass
 class Placeholder:
     detail: str
+
+
+@dataclass
+class Table:
+    rows: list[list[str]] = field(default_factory=list)  # rows[0] is the header
 
 
 @dataclass
@@ -84,8 +118,22 @@ class Ack:
     label: str
 
 
-_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack)\s*:\s*(.+?)\s*\}$", re.S)
+@dataclass
+class Slider:
+    label: str
+    left: str = ""
+    right: str = ""
+
+
+@dataclass
+class Comb:
+    label: str
+    n: int = 8
+
+
+_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack|slider|comb)\s*:\s*(.+?)\s*\}$", re.S)
 _ROWS_RE = re.compile(r"\s+rows\s*=\s*(\d+)\s*$")
+_N_RE = re.compile(r"\s+n\s*=\s*(\d+)\s*$")
 _TASK_RE = re.compile(r"^\[( |x|X)\]\s+(.*)$", re.S)
 
 
@@ -103,6 +151,21 @@ def _directive(text: str):
         return Capture(body.strip() or "capture", rows)
     if kind == "ack":
         return Ack(body.strip() or "acknowledged")
+    if kind == "slider":
+        parts = [p.strip() for p in body.split("|")]
+        if not parts[0]:
+            return None
+        left = parts[1] if len(parts) > 1 else ""
+        right = parts[2] if len(parts) > 2 else ""
+        return Slider(parts[0], left, right)
+    if kind == "comb":
+        n = 8
+        nm = _N_RE.search(body)
+        if nm:
+            n = max(1, int(nm.group(1)))
+            body = body[: nm.start()]
+        label = body.strip()
+        return Comb(label, n) if label else None
     parts = [p.strip() for p in body.split("|")]
     options = [p for p in parts[1:] if p]
     if parts[0] and options:
@@ -110,16 +173,60 @@ def _directive(text: str):
     return None
 
 
-def _flatten(tok) -> str:
-    parts: list[str] = []
+def _segments(tok) -> list[Segment]:
+    """Walk an inline token's children into merged (text, style) segments."""
+    segs: list[Segment] = []
+    bold = 0
+    italic = 0
+
+    def style() -> str:
+        if bold and italic:
+            return "bolditalic"
+        if bold:
+            return "bold"
+        if italic:
+            return "italic"
+        return "body"
+
+    def emit(text: str, sty: str | None = None) -> None:
+        if not text:
+            return
+        sty = sty or style()
+        if segs and segs[-1][1] == sty:
+            segs[-1] = (segs[-1][0] + text, sty)
+        else:
+            segs.append((text, sty))
+
     for ch in tok.children or []:
-        if ch.type in ("text", "code_inline"):
-            parts.append(ch.content)
-        elif ch.type in ("softbreak", "hardbreak"):
-            parts.append(" ")
-        elif ch.type == "image":
-            parts.append(f"[image: {ch.content or 'image'}]")
-    return "".join(parts).strip()
+        ty = ch.type
+        if ty == "text":
+            emit(ch.content)
+        elif ty == "code_inline":
+            emit(ch.content, "code")
+        elif ty == "strong_open":
+            bold += 1
+        elif ty == "strong_close":
+            bold -= 1
+        elif ty == "em_open":
+            italic += 1
+        elif ty == "em_close":
+            italic -= 1
+        elif ty in ("softbreak", "hardbreak"):
+            emit(" ")
+        elif ty == "image":
+            emit(f"[image: {ch.content or 'image'}]")
+    # strip outer whitespace without losing interior styling
+    if segs:
+        first_text = segs[0][0].lstrip()
+        segs[0] = (first_text, segs[0][1])
+        last_text = segs[-1][0].rstrip()
+        segs[-1] = (last_text, segs[-1][1])
+        segs = [s for s in segs if s[0]]
+    return segs
+
+
+def _flatten(tok) -> str:
+    return "".join(text for text, _ in _segments(tok))
 
 
 def parse(text: str) -> list:
@@ -169,32 +276,41 @@ def parse(text: str) -> list:
             item_first = True
             i += 1
         elif ty == "table_open":
-            j, nrows = i, 0
+            rows: list[list[str]] = []
+            cur_row: list[str] = []
+            j = i + 1
             while j < len(toks) and toks[j].type != "table_close":
-                if toks[j].type == "tr_open":
-                    nrows += 1
+                tj = toks[j]
+                if tj.type == "tr_open":
+                    cur_row = []
+                elif tj.type == "tr_close":
+                    rows.append(cur_row)
+                elif tj.type == "inline":
+                    cur_row.append(_flatten(tj))
                 j += 1
-            blocks.append(Placeholder(f"table ({nrows} rows) not rendered"))
+            blocks.append(Table(rows))
             i = j + 1
         elif ty == "html_block":
             blocks.append(Placeholder("embedded HTML not rendered"))
             i += 1
         elif ty == "paragraph_open":
-            txt = _flatten(toks[i + 1])
+            segs = _segments(toks[i + 1])
+            txt = "".join(text for text, _ in segs)
             i += 3
             if quote_depth:
-                blocks.append(Quote(txt))
+                blocks.append(Quote(txt, segments=segs))
             elif lists:
                 depth = len(lists) - 1
                 m = _TASK_RE.match(txt)
                 if item_first and m and not lists[-1]["ordered"]:
                     blocks.append(Checkbox(m.group(2).strip(), depth))
                 else:
-                    blocks.append(ListItem(txt, depth, cur_marker if item_first else ""))
+                    blocks.append(
+                        ListItem(txt, depth, cur_marker if item_first else "", segments=segs))
                 item_first = False
             else:
                 d = _directive(txt)
-                blocks.append(d if d is not None else Paragraph(txt))
+                blocks.append(d if d is not None else Paragraph(txt, segments=segs))
         else:
             i += 1
     return blocks

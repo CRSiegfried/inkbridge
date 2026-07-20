@@ -20,8 +20,10 @@ from inkbridge.compose.parser import (
     Capture,
     Checkbox,
     Choice,
+    Comb,
     Paragraph,
-    Placeholder,
+    Slider,
+    Table,
     parse,
 )
 from inkbridge.convert.targeted import _bbox_to_pixels
@@ -51,6 +53,10 @@ Please review this list *carefully* and check what we need. See
 
 {ack: reviewed}
 
+{slider: how urgent | not at all | very}
+
+{comb: date n=8}
+
 ```
 code line one
 a much longer code line that will need to be character wrapped because it exceeds the content width 01234567890123456789012345678901234567890123456789
@@ -75,7 +81,8 @@ def test_kitchen_sink_renders(tmp_path):
     manifest = json.loads(res.manifest_path.read_text())
     assert manifest["compose_version"]
     types = {c["type"] for c in manifest["cells"]}
-    assert {"checkbox", "choice", "capture", "ack", "capture_trigger", "command"} <= types
+    assert {"checkbox", "choice", "capture", "ack", "slider", "comb",
+            "capture_trigger", "command"} <= types
     for cell in manifest["cells"]:
         x, y, w, h = cell["bbox_norm"]
         assert 0 <= x and 0 <= y and w > 0 and h > 0
@@ -96,7 +103,9 @@ def test_geometry_roundtrip(tmp_path):
     np = pytest.importorskip("numpy")
     pdfium = pytest.importorskip("pypdfium2")
 
-    md = "# Form\n\n- [ ] alpha\n- [ ] beta\n- [ ] gamma\n\n{capture: sketch rows=6}\n"
+    md = ("# Form\n\n- [ ] alpha\n- [ ] beta\n- [ ] gamma\n\n"
+          "{slider: mood | low | high}\n\n{comb: code n=4}\n\n"
+          "{capture: sketch rows=6}\n")
     res = compose(md, tmp_path / "form.pdf")
     pdf = pdfium.PdfDocument(str(res.pdf_path))
     pil = pdf[0].render(scale=4).to_pil().convert("L")
@@ -108,7 +117,8 @@ def test_geometry_roundtrip(tmp_path):
             continue
         x0, y0, x1, y1 = _bbox_to_pixels(tuple(cell["bbox_norm"]), arr.shape)
         crop = arr[y0:y1, x0:x1]
-        if cell["type"] in ("checkbox", "ack", "capture_trigger", "command"):
+        if cell["type"] in ("checkbox", "ack", "capture_trigger", "command",
+                            "slider", "comb"):
             # The printed glyph must land inside its manifest bbox.
             assert (crop < 128).any(), f"no glyph ink inside bbox of {cell['id']}"
         elif cell["type"] == "capture":
@@ -158,9 +168,59 @@ def test_checkbox_detection():
     assert not isinstance(blocks[2], Checkbox)
 
 
-def test_table_degrades_to_placeholder():
-    blocks = parse("| a | b |\n|---|---|\n| 1 | 2 |\n")
-    assert any(isinstance(b, Placeholder) for b in blocks)
+def test_table_parses_to_rows():
+    blocks = parse("| name | qty |\n|---|---|\n| milk | 2 |\n| eggs | 12 |\n")
+    (table,) = [b for b in blocks if isinstance(b, Table)]
+    assert table.rows == [["name", "qty"], ["milk", "2"], ["eggs", "12"]]
+
+
+def test_inline_segments():
+    (p,) = parse("plain **bold** and *italic* plus `code` and ***both***\n")
+    assert isinstance(p, Paragraph)
+    assert p.segments == [
+        ("plain ", "body"),
+        ("bold", "bold"),
+        (" and ", "body"),
+        ("italic", "italic"),
+        (" plus ", "body"),
+        ("code", "code"),
+        (" and ", "body"),
+        ("both", "bolditalic"),
+    ]
+    assert p.text == "plain bold and italic plus code and both"
+
+
+def test_slider_and_comb_directives():
+    blocks = parse(
+        "{slider: urgency | low | high}\n\n{slider: plain}\n\n"
+        "{comb: date n=10}\n\n{comb: zip}\n"
+    )
+    s1, s2, c1, c2 = blocks
+    assert isinstance(s1, Slider) and (s1.label, s1.left, s1.right) == ("urgency", "low", "high")
+    assert isinstance(s2, Slider) and (s2.left, s2.right) == ("", "")
+    assert isinstance(c1, Comb) and c1.n == 10
+    assert isinstance(c2, Comb) and c2.n == 8  # default
+
+
+def test_slider_and_comb_manifest_extras(tmp_path):
+    res = compose("{slider: mood | bad | good}\n\n{comb: date n=6}\n", tmp_path / "s.pdf")
+    (slider,) = [c for c in res.cells if c["type"] == "slider"]
+    track = slider["track_norm"]
+    assert 0 < track["x0"] < track["x1"] < 1 and 0 < track["y"] < 1
+    # track must lie inside the cell bbox
+    x, y, w, h = slider["bbox_norm"]
+    assert x <= track["x0"] and track["x1"] <= x + w and y <= track["y"] <= y + h
+
+    (comb,) = [c for c in res.cells if c["type"] == "comb"]
+    assert comb["n"] == 6 and len(comb["boxes_norm"]) == 6
+    for bx, by, bw, bh in comb["boxes_norm"]:
+        assert x_contains(comb["bbox_norm"], (bx, by, bw, bh))
+
+
+def x_contains(outer, inner) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return ox <= ix and oy <= iy and ix + iw <= ox + ow and iy + ih <= oy + oh
 
 
 def test_empty_document(tmp_path):
