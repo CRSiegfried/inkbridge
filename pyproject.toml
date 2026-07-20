@@ -23,10 +23,12 @@ dependencies = [
     "pypdf>=4.0",
     "reportlab>=4.0",
     "markdown-it-py>=3.0",
+    "numpy>=1.26",
+    "pypdfium2>=4.30",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6", "pypdfium2>=4.30", "numpy>=1.26"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
 
 [project.scripts]
 inkbridge = "inkbridge.cli:main"

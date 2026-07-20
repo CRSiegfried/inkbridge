@@ -131,6 +131,40 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
 
 
 @main.command()
+@click.argument("base_pdf", type=click.Path(exists=True, path_type=Path))
+@click.argument("mark_file", type=click.Path(exists=True, path_type=Path))
+@click.option("-p", "--page", default=1, show_default=True, help="1-indexed page.")
+@click.option("-o", "--output", type=click.Path(path_type=Path), required=True)
+@click.option("--cell", "cell_id", default=None,
+              help="Crop to this manifest cell id (requires --manifest).")
+@click.option("--manifest", "manifest_path",
+              type=click.Path(exists=True, path_type=Path), default=None)
+def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
+              cell_id: str | None, manifest_path: Path | None) -> None:
+    """Overlay decoded .pdf.mark ink onto the rendered base PDF page —
+    the capture render sent to a VLM (0012 F5). Never a coverage target.
+    """
+    import json as jsonlib
+
+    from inkbridge.composite import composite_page, composite_region
+
+    if cell_id:
+        if not manifest_path:
+            raise click.UsageError("--cell requires --manifest")
+        cells = jsonlib.loads(manifest_path.read_text())["cells"]
+        match = next((c for c in cells if c["id"] == cell_id), None)
+        if match is None:
+            raise click.ClickException(f"no cell {cell_id!r} in {manifest_path}")
+        img = composite_region(
+            base_pdf, mark_file, match["page"], tuple(match["bbox_norm"]))
+    else:
+        img = composite_page(base_pdf, mark_file, page)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    img.save(output)
+    click.echo(f"Wrote {output} ({img.size[0]}x{img.size[1]})")
+
+
+@main.command()
 @click.argument("base", type=click.Path(exists=True, path_type=Path))
 @click.argument("addition", type=click.Path(exists=True, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)
