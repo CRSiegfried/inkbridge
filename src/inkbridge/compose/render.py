@@ -20,8 +20,6 @@ from .geometry import (
     BLACK,
     CANVAS_H,
     CANVAS_W,
-    CMD_PITCH,
-    CMD_X0,
     CONTENT_TOP,
     CONTENT_W,
     CONTENT_X0,
@@ -272,23 +270,23 @@ class Renderer:
         )
 
     def _draw_strip(self) -> None:
-        # Everything (labels above the boxes, then the boxes) must clear
-        # STRIP_SAFE_BOTTOM: the device reader UI covers the canvas below
-        # it, which hid the old under-box labels entirely.
+        # The reader UI clips the bottom corners but not the center band
+        # (measured 2026-07-20, see geometry.SIDE_SAFE_BOTTOM /
+        # CENTER_SAFE_BOTTOM): side content stays high; the trigger box
+        # row sits lower, inside the center-visible band.
         p = self.px
         p.line(CONTENT_X0, STRIP_TOP, CONTENT_X1, STRIP_TOP, lw=2.0, stroke=GRAY)
-        p.text(TRIGGER_X0, STRIP_TOP - 14, "command strip", 7.0, BODY, fill=GRAY)
+        p.text(CONTENT_X0 + 30, STRIP_TOP - 14, "command strip", 7.0, BODY, fill=GRAY)
         p.text(CONTENT_X1 - 60, STRIP_TOP - 14, f"p{self.page}", 7.0, BODY, fill=GRAY)
-        label_y = STRIP_TOP + 38
-        ty = STRIP_TOP + 52
 
         # Positional fiducial: page k's trigger box occupies slot k. Pages
         # beyond capacity share the last slot (fiducial_unique=false) and
         # fall back to the observed-ordering assumption (0012 finding 4).
         slot = min(self.page - 1, TRIGGER_SLOTS - 1)
         tx = TRIGGER_X0 + slot * TRIGGER_PITCH
+        ty = STRIP_TOP + 70
+        p.text(tx, STRIP_TOP + 56, "capture pg", 7.0, BODY, fill=GRAY)
         p.rect(tx, ty, TRIGGER_BOX, TRIGGER_BOX, lw=4.0)
-        p.text(tx, label_y, "capture pg", 7.0, BODY, fill=GRAY)
         self._add_cell(
             "capture_trigger",
             f"capture page {self.page}",
@@ -297,15 +295,6 @@ class Renderer:
             slot=slot,
             fiducial_unique=self.page <= TRIGGER_SLOTS,
         )
-        for j, name in enumerate(("done", "remind", "archive")):
-            bx = CMD_X0 + j * CMD_PITCH
-            p.rect(bx, ty, TRIGGER_BOX, TRIGGER_BOX, lw=4.0)
-            p.text(bx, label_y, name, 7.0, BODY, fill=GRAY)
-            self._add_cell(
-                "command", name,
-                bx - 16, ty - 16, TRIGGER_BOX + 32, TRIGGER_BOX + 32,
-                id_=f"cmd.{name}.p{self.page}",
-            )
 
     # -- block renderers ---------------------------------------------------
 

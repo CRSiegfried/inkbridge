@@ -82,7 +82,7 @@ def test_kitchen_sink_renders(tmp_path):
     assert manifest["compose_version"]
     types = {c["type"] for c in manifest["cells"]}
     assert {"checkbox", "choice", "capture", "ack", "slider", "comb",
-            "capture_trigger", "command"} <= types
+            "capture_trigger"} <= types
     for cell in manifest["cells"]:
         x, y, w, h = cell["bbox_norm"]
         assert 0 <= x and 0 <= y and w > 0 and h > 0
@@ -117,7 +117,7 @@ def test_geometry_roundtrip(tmp_path):
             continue
         x0, y0, x1, y1 = _bbox_to_pixels(tuple(cell["bbox_norm"]), arr.shape)
         crop = arr[y0:y1, x0:x1]
-        if cell["type"] in ("checkbox", "ack", "capture_trigger", "command",
+        if cell["type"] in ("checkbox", "ack", "capture_trigger",
                             "slider", "comb"):
             # The printed glyph must land inside its manifest bbox.
             assert (crop < 128).any(), f"no glyph ink inside bbox of {cell['id']}"
@@ -139,25 +139,38 @@ def test_pagination_and_fiducial_slots(tmp_path):
     for t in triggers:
         assert t["slot"] == min(t["page"] - 1, TRIGGER_SLOTS - 1)
         assert t["fiducial_unique"] == (t["page"] <= TRIGGER_SLOTS)
-    # every page carries a full command strip
+    # every page carries exactly one trigger and no other strip cells
     for p in range(1, res.pages + 1):
-        names = {c["label"] for c in res.cells if c["type"] == "command" and c["page"] == p}
-        assert names == {"done", "remind", "archive"}
+        strip = [c for c in res.cells if c["id"].startswith("cmd.") and c["page"] == p]
+        assert len(strip) == 1 and strip[0]["type"] == "capture_trigger"
 
 
 def test_strip_clears_device_safe_bottom(tmp_path):
-    # Device feedback 2026-07-20: the reader UI covers ~the bottom 100 px,
-    # which hid the strip labels and clipped box bottoms. Nothing but the
-    # corner registration ticks may be drawn below STRIP_SAFE_BOTTOM.
+    # Measured chrome envelope (2026-07-20 ruler fixture): the reader UI
+    # clips the bottom corners below SIDE_SAFE_BOTTOM but leaves the
+    # CENTER_X0..CENTER_X1 band visible to CENTER_SAFE_BOTTOM. Only the
+    # corner registration ticks (compositing-only) may break these.
     np = pytest.importorskip("numpy")
     pdfium = pytest.importorskip("pypdfium2")
-    from inkbridge.compose.geometry import STRIP_SAFE_BOTTOM
+    from inkbridge.compose.geometry import (
+        CENTER_SAFE_BOTTOM,
+        CENTER_X0,
+        CENTER_X1,
+        SIDE_SAFE_BOTTOM,
+    )
 
     res = compose("# T\n\n- [ ] item\n", tmp_path / "t.pdf")
     pdf = pdfium.PdfDocument(str(res.pdf_path))
     arr = np.asarray(pdf[0].render(scale=4).to_pil().convert("L"))
-    below = arr[STRIP_SAFE_BOTTOM + 4 :, 130:1790]  # exclude tick corners
-    assert not (below < 128).any(), "strip content extends below the safe area"
+    dark = arr < 128
+    # sides (tick corners excluded; 6 px slack for a boundary box's own
+    # stroke width): nothing below the side-safe line
+    left = dark[SIDE_SAFE_BOTTOM + 4 :, 130 : CENTER_X0 - 6]
+    right = dark[SIDE_SAFE_BOTTOM + 4 :, CENTER_X1 + 6 : 1790]
+    assert not left.any() and not right.any(), "side content below safe line"
+    # center band: nothing below the deeper center-safe line
+    center = dark[CENTER_SAFE_BOTTOM + 4 :, CENTER_X0:CENTER_X1]
+    assert not center.any(), "center content below center-safe line"
 
 
 def test_long_checkbox_label_wraps_to_second_line(tmp_path):
@@ -276,4 +289,4 @@ def x_contains(outer, inner) -> bool:
 def test_empty_document(tmp_path):
     res = compose("", tmp_path / "empty.pdf")
     assert res.pages == 1
-    assert {c["type"] for c in res.cells} == {"capture_trigger", "command"}
+    assert {c["type"] for c in res.cells} == {"capture_trigger"}

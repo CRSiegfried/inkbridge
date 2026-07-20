@@ -24,12 +24,18 @@ CONTENT_W = CONTENT_X1 - CONTENT_X0  # 1660
 CONTENT_TOP = 160
 
 # Footer command strip (Analysis 0012 finding 4). Content stops 40 px above.
-# Device feedback (2026-07-20): the reader UI covers roughly the bottom
-# 100 px of the canvas, so the strip's boxes and labels must all sit above
-# STRIP_SAFE_BOTTOM — labels go above the boxes, and nothing but the corner
-# registration ticks is drawn below it.
+# Device chrome, measured with the inked ruler fixture (2026-07-20): the
+# reader UI clips the bottom *corners* — on the sides the lowest fully
+# visible ruler line is y=2440 (x~460) — while the center-bottom stays
+# visible to at least y=2540 (x~930). So side content must clear
+# SIDE_SAFE_BOTTOM, and only the CENTER_X0..CENTER_X1 band may use the
+# deeper CENTER_SAFE_BOTTOM. Corner registration ticks are exempt
+# (compositing-only marks, never meant to be read on screen).
 STRIP_TOP = 2340
-STRIP_SAFE_BOTTOM = 2460
+SIDE_SAFE_BOTTOM = 2420
+CENTER_SAFE_BOTTOM = 2520
+CENTER_X0 = 640
+CENTER_X1 = 1280
 ROWS_PER_PAGE = (STRIP_TOP - 40 - CONTENT_TOP) // ROW  # 26
 
 # Tickable glyph boxes (checkbox/ack/choice): the manifest cell is the
@@ -42,13 +48,14 @@ GLYPH_BOX = 90
 GLYPH_PAD = 20
 
 # Trigger slots: page k's "capture this page" box sits at slot k — the
-# positional page-identity fiducial. Fixed command boxes live at the right.
-TRIGGER_X0 = 160
+# positional page-identity fiducial. The slot row lives in the measured
+# center-visible band; the fixed command boxes (done/remind/archive) were
+# dropped 2026-07-20 — read but unused, and the corner chrome clipped
+# them. Re-add inside the center band if they ever gain behavior.
+TRIGGER_X0 = CENTER_X0
 TRIGGER_PITCH = 96
 TRIGGER_BOX = 64
-CMD_X0 = 1400
-CMD_PITCH = 160
-TRIGGER_SLOTS = (CMD_X0 - 60 - TRIGGER_X0 - TRIGGER_BOX) // TRIGGER_PITCH + 1  # 12
+TRIGGER_SLOTS = (CENTER_X1 - CENTER_X0 - TRIGGER_BOX) // TRIGGER_PITCH + 1  # 7
 
 BLACK = black
 GRAY = Color(0.55, 0.55, 0.55)

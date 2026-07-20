@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-COMPOSE_VERSION = "0.4.0"
+COMPOSE_VERSION = "0.5.0"
 
 
 @dataclass
