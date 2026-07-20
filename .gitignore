@@ -14,3 +14,15 @@ build/
 .env
 notes/local/
 captures/
+device-backup-2026-07-19/
+
+# Personal Private Cloud deployment instance (secrets, real data, evidence,
+# runtime volumes). The PUBLIC, reusable deploy recipe lives in deploy/ itself;
+# deploy/local/ is this machine's filled-in instance and never gets committed.
+deploy/local/
+
+# scratchpad: sources tracked, generated artifacts and logs not
+scratchpad/*.pdf
+scratchpad/*.png
+scratchpad/*.json
+scratchpad/*.log

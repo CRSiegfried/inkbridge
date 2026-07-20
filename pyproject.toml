@@ -20,10 +20,12 @@ dependencies = [
     "supernotelib>=0.7.1",
     "sncloud>=0.2.1",
     "pypdf>=4.0",
+    "reportlab>=4.0",
+    "markdown-it-py>=3.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.6"]
+dev = ["pytest>=8.0", "ruff>=0.6", "pypdfium2>=4.30", "numpy>=1.26"]
 
 [project.scripts]
 inkbridge = "inkbridge.cli:main"

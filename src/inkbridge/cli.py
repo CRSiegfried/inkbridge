@@ -36,6 +36,22 @@ def pull(remote_path: str, output: Path) -> None:
 
 
 @main.command()
+@click.argument("source", type=click.Path(exists=True, path_type=Path))
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=None)
+@click.option("--manifest", "manifest_path", type=click.Path(path_type=Path), default=None)
+def compose(source: Path, output: Path | None, manifest_path: Path | None) -> None:
+    """Render markdown to a row-grid PDF + input-area manifest (Phase 2.5)."""
+    from inkbridge.compose import compose as compose_markdown
+
+    output = output or source.with_suffix(".pdf")
+    result = compose_markdown(source, output, manifest_path)
+    click.echo(
+        f"Wrote {result.pdf_path} ({result.pages} page(s)) and "
+        f"{result.manifest_path} ({len(result.cells)} cells, doc_id {result.doc_id})"
+    )
+
+
+@main.command()
 @click.argument("base", type=click.Path(exists=True, path_type=Path))
 @click.argument("addition", type=click.Path(exists=True, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)

@@ -1,0 +1,169 @@
+"""Compose pipeline tests (Analysis 0012 F8-F9).
+
+The geometry round-trip test is the load-bearing one: it rasterizes the
+rendered PDF at the device canvas resolution (1920x2560) and checks that
+printed glyphs land inside their manifest bboxes as mapped by
+convert.targeted._bbox_to_pixels — the same mapping the readback path uses
+against a pulled .pdf.mark.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from inkbridge.compose import compose
+from inkbridge.compose.geometry import TRIGGER_SLOTS
+from inkbridge.compose.parser import (
+    Ack,
+    Capture,
+    Checkbox,
+    Choice,
+    Paragraph,
+    Placeholder,
+    parse,
+)
+from inkbridge.convert.targeted import _bbox_to_pixels
+
+KITCHEN_SINK = """\
+# Grocery run
+
+Please review this list *carefully* and check what we need. See
+[the store](https://example.com/a-very-long-url-path-that-must-char-break-gracefully-0123456789-abcdefghijklmnopqrstuvwxyz-0123456789) for details.
+
+## Produce
+
+- [ ] milk
+- [ ] eggs
+- [x] coffee
+
+1. first step
+2. second step
+   - nested detail
+     - deeper nested detail that flattens at depth two and also wraps because it is a fairly long line of text
+
+> A quoted reminder line that should wrap onto multiple rows and render with a side bar next to it.
+
+{choice: store | HEB | Kroger | Costco}
+
+{capture: extra items rows=5}
+
+{ack: reviewed}
+
+```
+code line one
+a much longer code line that will need to be character wrapped because it exceeds the content width 01234567890123456789012345678901234567890123456789
+```
+
+---
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+![diagram](x.png)
+
+Final paragraph with superlongunbreakabletoken_abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789 end.
+"""
+
+
+def test_kitchen_sink_renders(tmp_path):
+    res = compose(KITCHEN_SINK, tmp_path / "sink.pdf")
+    assert res.pdf_path.exists() and res.manifest_path.exists()
+    assert res.pages >= 1
+    manifest = json.loads(res.manifest_path.read_text())
+    assert manifest["compose_version"]
+    types = {c["type"] for c in manifest["cells"]}
+    assert {"checkbox", "choice", "capture", "ack", "capture_trigger", "command"} <= types
+    for cell in manifest["cells"]:
+        x, y, w, h = cell["bbox_norm"]
+        assert 0 <= x and 0 <= y and w > 0 and h > 0
+        assert x + w <= 1 and y + h <= 1
+        assert 1 <= cell["page"] <= manifest["pages"]
+
+
+def test_deterministic_output(tmp_path):
+    a = compose(KITCHEN_SINK, tmp_path / "a.pdf")
+    b = compose(KITCHEN_SINK, tmp_path / "b.pdf")
+    assert a.pdf_path.read_bytes() == b.pdf_path.read_bytes()
+    ma = json.loads(a.manifest_path.read_text())
+    mb = json.loads(b.manifest_path.read_text())
+    assert ma["cells"] == mb["cells"]
+
+
+def test_geometry_roundtrip(tmp_path):
+    np = pytest.importorskip("numpy")
+    pdfium = pytest.importorskip("pypdfium2")
+
+    md = "# Form\n\n- [ ] alpha\n- [ ] beta\n- [ ] gamma\n\n{capture: sketch rows=6}\n"
+    res = compose(md, tmp_path / "form.pdf")
+    pdf = pdfium.PdfDocument(str(res.pdf_path))
+    pil = pdf[0].render(scale=4).to_pil().convert("L")
+    assert pil.size == (1920, 2560)
+    arr = np.asarray(pil)
+
+    for cell in res.cells:
+        if cell["page"] != 1:
+            continue
+        x0, y0, x1, y1 = _bbox_to_pixels(tuple(cell["bbox_norm"]), arr.shape)
+        crop = arr[y0:y1, x0:x1]
+        if cell["type"] in ("checkbox", "ack", "capture_trigger", "command"):
+            # The printed glyph must land inside its manifest bbox.
+            assert (crop < 128).any(), f"no glyph ink inside bbox of {cell['id']}"
+        elif cell["type"] == "capture":
+            # Corner brackets present; interior only faint ruling (no dark ink).
+            for cx, cy in ((x0, y0), (x1, y0), (x0, y1), (x1, y1)):
+                win = arr[max(0, cy - 80) : cy + 80, max(0, cx - 80) : cx + 80]
+                assert (win < 128).any(), f"missing bracket at {(cx, cy)} for {cell['id']}"
+            inner = arr[y0 + 100 : y1 - 100, x0 + 100 : x1 - 100]
+            assert not (inner < 128).any(), f"dark ink inside capture interior {cell['id']}"
+
+
+def test_pagination_and_fiducial_slots(tmp_path):
+    md = "# Long list\n\n" + "\n".join(f"- [ ] item {i}" for i in range(40))
+    res = compose(md, tmp_path / "long.pdf")
+    assert res.pages >= 2
+    triggers = [c for c in res.cells if c["type"] == "capture_trigger"]
+    assert len(triggers) == res.pages
+    for t in triggers:
+        assert t["slot"] == min(t["page"] - 1, TRIGGER_SLOTS - 1)
+        assert t["fiducial_unique"] == (t["page"] <= TRIGGER_SLOTS)
+    # every page carries a full command strip
+    for p in range(1, res.pages + 1):
+        names = {c["label"] for c in res.cells if c["type"] == "command" and c["page"] == p}
+        assert names == {"done", "remind", "archive"}
+
+
+def test_directive_parsing():
+    blocks = parse(
+        "{capture: sketch rows=4}\n\n{choice: size | S | M | L}\n\n{ack: reviewed}\n"
+    )
+    cap, choice, ack = blocks
+    assert isinstance(cap, Capture) and cap.label == "sketch" and cap.rows == 4
+    assert isinstance(choice, Choice) and choice.label == "size"
+    assert choice.options == ["S", "M", "L"]
+    assert isinstance(ack, Ack) and ack.label == "reviewed"
+
+
+def test_malformed_directive_stays_visible():
+    blocks = parse("{choice: only-a-label}\n\n{bogus: nothing}\n")
+    assert all(isinstance(b, Paragraph) for b in blocks)
+
+
+def test_checkbox_detection():
+    blocks = parse("- [ ] unchecked\n- [x] checked\n- plain item\n")
+    assert isinstance(blocks[0], Checkbox) and blocks[0].label == "unchecked"
+    assert isinstance(blocks[1], Checkbox) and blocks[1].label == "checked"
+    assert not isinstance(blocks[2], Checkbox)
+
+
+def test_table_degrades_to_placeholder():
+    blocks = parse("| a | b |\n|---|---|\n| 1 | 2 |\n")
+    assert any(isinstance(b, Placeholder) for b in blocks)
+
+
+def test_empty_document(tmp_path):
+    res = compose("", tmp_path / "empty.pdf")
+    assert res.pages == 1
+    assert {c["type"] for c in res.cells} == {"capture_trigger", "command"}
