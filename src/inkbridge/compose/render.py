@@ -271,18 +271,23 @@ class Renderer:
         )
 
     def _draw_strip(self) -> None:
+        # Everything (labels above the boxes, then the boxes) must clear
+        # STRIP_SAFE_BOTTOM: the device reader UI covers the canvas below
+        # it, which hid the old under-box labels entirely.
         p = self.px
         p.line(CONTENT_X0, STRIP_TOP, CONTENT_X1, STRIP_TOP, lw=2.0, stroke=GRAY)
         p.text(TRIGGER_X0, STRIP_TOP - 14, "command strip", 7.0, BODY, fill=GRAY)
         p.text(CONTENT_X1 - 60, STRIP_TOP - 14, f"p{self.page}", 7.0, BODY, fill=GRAY)
+        label_y = STRIP_TOP + 38
+        ty = STRIP_TOP + 52
 
         # Positional fiducial: page k's trigger box occupies slot k. Pages
         # beyond capacity share the last slot (fiducial_unique=false) and
         # fall back to the observed-ordering assumption (0012 finding 4).
         slot = min(self.page - 1, TRIGGER_SLOTS - 1)
-        tx, ty = TRIGGER_X0 + slot * TRIGGER_PITCH, STRIP_TOP + 24
+        tx = TRIGGER_X0 + slot * TRIGGER_PITCH
         p.rect(tx, ty, TRIGGER_BOX, TRIGGER_BOX, lw=4.0)
-        p.text(tx, STRIP_TOP + 112, "capture pg", 7.0, BODY, fill=GRAY)
+        p.text(tx, label_y, "capture pg", 7.0, BODY, fill=GRAY)
         self._add_cell(
             "capture_trigger",
             f"capture page {self.page}",
@@ -294,7 +299,7 @@ class Renderer:
         for j, name in enumerate(("done", "remind", "archive")):
             bx = CMD_X0 + j * CMD_PITCH
             p.rect(bx, ty, TRIGGER_BOX, TRIGGER_BOX, lw=4.0)
-            p.text(bx, STRIP_TOP + 112, name, 7.0, BODY, fill=GRAY)
+            p.text(bx, label_y, name, 7.0, BODY, fill=GRAY)
             self._add_cell(
                 "command", name,
                 bx - 16, ty - 16, TRIGGER_BOX + 32, TRIGGER_BOX + 32,
@@ -390,16 +395,28 @@ class Renderer:
         gx, gy, gs = x0 + 40, top + 35, 90
         self.px.rect(gx, gy, gs, gs, lw=4.0)
         self.px.line(x0, top + 160, CONTENT_X1, top + 160, lw=1.5, stroke=FAINT)
-        self.px.text(
-            gx + 130, top + 98,
-            _fit(label, BODY, 15.0, CONTENT_X1 - (gx + 130) - 30), 15.0, BODY,
-        )
+        # Long labels wrap onto a second line inside the same 2-row cell;
+        # only past two lines does ellipsis truncation kick in.
+        tx = gx + 130
+        max_w = CONTENT_X1 - tx - 30
+        lines = _wrap(label, BODY, 15.0, max_w)
+        if len(lines) == 1:
+            self.px.text(tx, top + 98, lines[0], 15.0, BODY)
+        else:
+            if len(lines) > 2:
+                lines = [lines[0], _fit(" ".join(lines[1:]), BODY, 15.0, max_w)]
+            self.px.text(tx, top + 68, lines[0], 15.0, BODY)
+            self.px.text(tx, top + 132, lines[1], 15.0, BODY)
         self._add_cell(ctype, label, x0, top, CHECK_CELL_W, 2 * ROW)
         self.row += 2
 
     def _choice(self, b: Choice) -> None:
-        chunks = [b.options[i : i + 4] for i in range(0, len(b.options), 4)]
-        slot_w = CONTENT_W // min(len(b.options), 4)
+        # Column count follows the widest option (box + gaps + label + pad),
+        # so long options get fewer, wider slots instead of ellipses.
+        widest = max(width_px(o, BODY, 13.0) for o in b.options)
+        cols = max(1, min(4, len(b.options), int(CONTENT_W // (widest + 220))))
+        chunks = [b.options[i : i + cols] for i in range(0, len(b.options), cols)]
+        slot_w = CONTENT_W // cols
         self._ensure(min(1 + 2 * len(chunks), ROWS_PER_PAGE))
         top = self._y()
         self.px.text(
@@ -414,7 +431,7 @@ class Renderer:
                 sx = CONTENT_X0 + j * slot_w
                 self.px.rect(sx + 30, top + 35, 90, 90, lw=4.0)
                 self.px.text(
-                    sx + 150, top + 98, _fit(opt, BODY, 13.0, slot_w - 200), 13.0, BODY
+                    sx + 150, top + 98, _fit(opt, BODY, 13.0, slot_w - 190), 13.0, BODY
                 )
                 self._add_cell(
                     "choice", f"{b.label}: {opt}",

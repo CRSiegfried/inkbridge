@@ -145,6 +145,51 @@ def test_pagination_and_fiducial_slots(tmp_path):
         assert names == {"done", "remind", "archive"}
 
 
+def test_strip_clears_device_safe_bottom(tmp_path):
+    # Device feedback 2026-07-20: the reader UI covers ~the bottom 100 px,
+    # which hid the strip labels and clipped box bottoms. Nothing but the
+    # corner registration ticks may be drawn below STRIP_SAFE_BOTTOM.
+    np = pytest.importorskip("numpy")
+    pdfium = pytest.importorskip("pypdfium2")
+    from inkbridge.compose.geometry import STRIP_SAFE_BOTTOM
+
+    res = compose("# T\n\n- [ ] item\n", tmp_path / "t.pdf")
+    pdf = pdfium.PdfDocument(str(res.pdf_path))
+    arr = np.asarray(pdf[0].render(scale=4).to_pil().convert("L"))
+    below = arr[STRIP_SAFE_BOTTOM + 4 :, 130:1790]  # exclude tick corners
+    assert not (below < 128).any(), "strip content extends below the safe area"
+
+
+def test_long_checkbox_label_wraps_to_second_line(tmp_path):
+    np = pytest.importorskip("numpy")
+    pdfium = pytest.importorskip("pypdfium2")
+
+    long = "a checkbox with a much longer label to see how truncation behaves on the device screen"
+    res = compose(f"- [ ] milk\n- [ ] {long}\n", tmp_path / "cb.pdf")
+    pdf = pdfium.PdfDocument(str(res.pdf_path))
+    arr = np.asarray(pdf[0].render(scale=4).to_pil().convert("L"))
+
+    def second_line_band(cell):
+        x, y, _, _ = cell["bbox_norm"]
+        px, py = int(x * 1920), int(y * 2560)
+        return arr[py + 112 : py + 150, px + 180 : px + 1400]
+
+    short_cell, long_cell = (c for c in res.cells if c["type"] == "checkbox")
+    assert not (second_line_band(short_cell) < 128).any()
+    assert (second_line_band(long_cell) < 128).any(), "long label did not wrap"
+
+
+def test_choice_columns_follow_option_width(tmp_path):
+    short = compose("{choice: q | a | b | c | d}\n", tmp_path / "s.pdf")
+    ys = {c["bbox_norm"][1] for c in short.cells if c["type"] == "choice"}
+    assert len(ys) == 1  # four short options share one row
+
+    long_opts = "{choice: next store run | HEB | Kroger | Costco | skip this week}\n"
+    wide = compose(long_opts, tmp_path / "w.pdf")
+    ys = {c["bbox_norm"][1] for c in wide.cells if c["type"] == "choice"}
+    assert len(ys) > 1  # "skip this week" forces fewer, wider columns
+
+
 def test_directive_parsing():
     blocks = parse(
         "{capture: sketch rows=4}\n\n{choice: size | S | M | L}\n\n{ack: reviewed}\n"

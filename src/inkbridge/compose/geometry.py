@@ -24,8 +24,13 @@ CONTENT_W = CONTENT_X1 - CONTENT_X0  # 1660
 CONTENT_TOP = 160
 
 # Footer command strip (Analysis 0012 finding 4). Content stops 40 px above.
-STRIP_TOP = 2360
-ROWS_PER_PAGE = (STRIP_TOP - 40 - CONTENT_TOP) // ROW  # 27
+# Device feedback (2026-07-20): the reader UI covers roughly the bottom
+# 100 px of the canvas, so the strip's boxes and labels must all sit above
+# STRIP_SAFE_BOTTOM — labels go above the boxes, and nothing but the corner
+# registration ticks is drawn below it.
+STRIP_TOP = 2340
+STRIP_SAFE_BOTTOM = 2460
+ROWS_PER_PAGE = (STRIP_TOP - 40 - CONTENT_TOP) // ROW  # 26
 
 # Checkbox/ack cell: generous fixed geometry so the coverage threshold is
 # calibrated once per template, not per document (0012 finding 8).
