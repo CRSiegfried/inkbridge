@@ -28,7 +28,7 @@ INK_GRAY_CUTOFF = 200
 DEFAULT_COVERAGE_THRESHOLD = 0.003
 
 
-def _decode_page_gray(note_path: Path, page_number: int):
+def decode_page_gray(note_path: Path, page_number: int):
     """Decode one page of a Supernote mark file to a grayscale numpy array
     of shape (H, W) = (2560, 1920) for the Manta. page_number is 1-indexed
     to match the manifest; supernotelib's convert() is 0-indexed.
@@ -64,6 +64,26 @@ def _bbox_to_pixels(
     return x0, y0, x1, y1
 
 
+def coverage_in_gray(
+    gray,
+    bbox_norm: tuple[float, float, float, float],
+    *,
+    ink_gray_cutoff: int = INK_GRAY_CUTOFF,
+    pad_px: int = 0,
+) -> float:
+    """Fraction (0..1) of pixels inside the normalized bbox of an
+    already-decoded grayscale page that are ink (grayscale < cutoff).
+    Lets callers with many cells on one page decode that page once.
+    """
+    import numpy as np
+
+    x0, y0, x1, y1 = _bbox_to_pixels(bbox_norm, gray.shape, pad_px)
+    crop = gray[y0:y1, x0:x1]
+    if crop.size == 0:
+        return 0.0
+    return float(np.count_nonzero(crop < ink_gray_cutoff)) / crop.size
+
+
 def region_ink_coverage(
     note_path: Path,
     page_number: int,
@@ -75,14 +95,9 @@ def region_ink_coverage(
     """Fraction (0..1) of pixels inside the normalized bbox that are ink
     (grayscale < ink_gray_cutoff) on the current decoded state of the page.
     """
-    import numpy as np
-
-    gray = _decode_page_gray(note_path, page_number)
-    x0, y0, x1, y1 = _bbox_to_pixels(bbox_norm, gray.shape, pad_px)
-    crop = gray[y0:y1, x0:x1]
-    if crop.size == 0:
-        return 0.0
-    return float(np.count_nonzero(crop < ink_gray_cutoff)) / crop.size
+    gray = decode_page_gray(note_path, page_number)
+    return coverage_in_gray(
+        gray, bbox_norm, ink_gray_cutoff=ink_gray_cutoff, pad_px=pad_px)
 
 
 def region_has_ink(

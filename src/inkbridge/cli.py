@@ -71,6 +71,66 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None) -> No
 
 
 @main.command()
+@click.argument("manifest", type=click.Path(exists=True, path_type=Path))
+@click.argument("mark_file", type=click.Path(exists=True, path_type=Path))
+@click.option("--hash-store", "hash_store_path", type=click.Path(path_type=Path),
+              default=None,
+              help="JSON ink-hash store; reports per-page changed/unchanged "
+                   "for re-dispatch idempotency (0012 F6).")
+@click.option("--update-hashes/--no-update-hashes", default=True,
+              help="Record the current page hashes into --hash-store.")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
+             update_hashes: bool, as_json: bool) -> None:
+    """Read a pulled .pdf.mark against its compose manifest: per-cell
+    blank / ANSWERED / AMBIGUOUS decisions over the isolated ink decode.
+    """
+    import json as jsonlib
+
+    from inkbridge.readback import InkHashStore, read_mark
+
+    manifest_data = jsonlib.loads(manifest.read_text())
+    doc_id = manifest_data["doc_id"]
+    pages = read_mark(manifest_data, mark_file)
+
+    store = InkHashStore(hash_store_path) if hash_store_path else None
+    changed: dict[int, bool] = {}
+    for p in pages:
+        if store:
+            changed[p.page] = store.changed(doc_id, p.page, p.ink_hash)
+            if update_hashes:
+                store.update(doc_id, p.page, p.ink_hash)
+
+    if as_json:
+        click.echo(jsonlib.dumps({
+            "doc_id": doc_id,
+            "mark_file": str(mark_file),
+            "pages": [{
+                "page": p.page,
+                "ink_hash": p.ink_hash,
+                **({"changed": changed[p.page]} if store else {}),
+                "cells": [{
+                    "id": c.id, "type": c.type, "label": c.label,
+                    "coverage": c.coverage, "decision": c.decision.value,
+                } for c in p.cells],
+            } for p in pages],
+        }, indent=2))
+        return
+
+    click.echo(f"doc:  {doc_id}\nmark: {mark_file}\n")
+    click.echo(f"{'cell':24} {'type':12} {'coverage %':>10}  decision")
+    for p in pages:
+        note = ""
+        if store:
+            note = "  [changed since last poll]" if changed[p.page] else "  [unchanged]"
+        click.echo(f"-- page {p.page}{note}")
+        for c in p.cells:
+            shown = {"blank": "blank", "ambiguous": "AMBIGUOUS -> escalate",
+                     "answered": "ANSWERED"}[c.decision.value]
+            click.echo(f"{c.id:24} {c.type:12} {c.coverage * 100:>10.4f}  {shown}")
+
+
+@main.command()
 @click.argument("base", type=click.Path(exists=True, path_type=Path))
 @click.argument("addition", type=click.Path(exists=True, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)
