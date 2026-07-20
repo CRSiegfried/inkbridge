@@ -48,14 +48,24 @@ GLYPH_BOX = 90
 GLYPH_PAD = 20
 
 # Trigger slots: page k's "capture this page" box sits at slot k — the
-# positional page-identity fiducial. The slot row lives in the measured
-# center-visible band; the fixed command boxes (done/remind/archive) were
+# positional page-identity fiducial. Slots are laid out CENTER-OUT within
+# the measured center-visible band: slot 0 dead center (so a one-page
+# document's box is centered on the page), then alternating right/left at
+# TRIGGER_PITCH steps. The fixed command boxes (done/remind/archive) were
 # dropped 2026-07-20 — read but unused, and the corner chrome clipped
 # them. Re-add inside the center band if they ever gain behavior.
-TRIGGER_X0 = CENTER_X0
 TRIGGER_PITCH = 96
 TRIGGER_BOX = 64
+TRIGGER_CENTER_X0 = (CANVAS_W - TRIGGER_BOX) // 2  # 928
 TRIGGER_SLOTS = (CENTER_X1 - CENTER_X0 - TRIGGER_BOX) // TRIGGER_PITCH + 1  # 7
+
+
+def trigger_slot_x0(slot: int) -> int:
+    """Left edge of a trigger slot's box: center-out, 0,+1,-1,+2,-2,…×pitch.
+    Every offset stays inside CENTER_X0..CENTER_X1 for slot < TRIGGER_SLOTS.
+    """
+    k = (slot + 1) // 2
+    return TRIGGER_CENTER_X0 + (k if slot % 2 == 1 else -k) * TRIGGER_PITCH
 
 BLACK = black
 GRAY = Color(0.55, 0.55, 0.55)

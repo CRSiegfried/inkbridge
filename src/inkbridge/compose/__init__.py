@@ -13,7 +13,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-COMPOSE_VERSION = "0.5.0"
+COMPOSE_VERSION = "0.6.0"
 
 
 @dataclass
@@ -42,7 +42,7 @@ def compose(
         TRIGGER_BOX,
         TRIGGER_PITCH,
         TRIGGER_SLOTS,
-        TRIGGER_X0,
+        TRIGGER_CENTER_X0,
     )
     from .parser import parse
     from .render import Renderer, _slug
@@ -65,7 +65,8 @@ def compose(
         "pages": renderer.page,
         "source_md5": source_md5,
         "trigger_slots": {
-            "x0": TRIGGER_X0,
+            "scheme": "center-out",
+            "center_x0": TRIGGER_CENTER_X0,
             "pitch": TRIGGER_PITCH,
             "box": TRIGGER_BOX,
             "capacity": TRIGGER_SLOTS,

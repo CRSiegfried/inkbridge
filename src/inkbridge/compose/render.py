@@ -34,9 +34,8 @@ from .geometry import (
     ROWS_PER_PAGE,
     STRIP_TOP,
     TRIGGER_BOX,
-    TRIGGER_PITCH,
     TRIGGER_SLOTS,
-    TRIGGER_X0,
+    trigger_slot_x0,
     Px,
     norm,
 )
@@ -279,13 +278,16 @@ class Renderer:
         p.text(CONTENT_X0 + 30, STRIP_TOP - 14, "command strip", 7.0, BODY, fill=GRAY)
         p.text(CONTENT_X1 - 60, STRIP_TOP - 14, f"p{self.page}", 7.0, BODY, fill=GRAY)
 
-        # Positional fiducial: page k's trigger box occupies slot k. Pages
-        # beyond capacity share the last slot (fiducial_unique=false) and
-        # fall back to the observed-ordering assumption (0012 finding 4).
+        # Positional fiducial: page k's trigger box occupies slot k
+        # (center-out — see geometry.trigger_slot_x0). Pages beyond
+        # capacity share the last slot (fiducial_unique=false) and fall
+        # back to the observed-ordering assumption (0012 finding 4).
         slot = min(self.page - 1, TRIGGER_SLOTS - 1)
-        tx = TRIGGER_X0 + slot * TRIGGER_PITCH
+        tx = trigger_slot_x0(slot)
         ty = STRIP_TOP + 70
-        p.text(tx, STRIP_TOP + 56, "capture pg", 7.0, BODY, fill=GRAY)
+        label = "capture pg"
+        label_x = tx + (TRIGGER_BOX - width_px(label, BODY, 7.0)) / 2
+        p.text(label_x, STRIP_TOP + 56, label, 7.0, BODY, fill=GRAY)
         p.rect(tx, ty, TRIGGER_BOX, TRIGGER_BOX, lw=4.0)
         self._add_cell(
             "capture_trigger",

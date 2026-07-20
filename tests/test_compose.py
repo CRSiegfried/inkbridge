@@ -208,6 +208,26 @@ def test_choice_columns_follow_option_width(tmp_path):
     assert len(ys) > 1  # "skip this week" forces fewer, wider columns
 
 
+def test_trigger_slots_center_out():
+    from inkbridge.compose.geometry import (
+        CENTER_X0,
+        CENTER_X1,
+        TRIGGER_BOX,
+        TRIGGER_CENTER_X0,
+        TRIGGER_PITCH,
+        TRIGGER_SLOTS,
+        trigger_slot_x0,
+    )
+
+    xs = [trigger_slot_x0(s) for s in range(TRIGGER_SLOTS)]
+    assert xs[0] == TRIGGER_CENTER_X0  # page 1 dead center
+    assert xs[1] == TRIGGER_CENTER_X0 + TRIGGER_PITCH
+    assert xs[2] == TRIGGER_CENTER_X0 - TRIGGER_PITCH
+    assert len(set(xs)) == TRIGGER_SLOTS  # every page distinct
+    for x in xs:
+        assert CENTER_X0 <= x and x + TRIGGER_BOX <= CENTER_X1
+
+
 def test_directive_parsing():
     blocks = parse(
         "{capture: sketch rows=4}\n\n{choice: size | S | M | L}\n\n{ack: reviewed}\n"
