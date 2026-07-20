@@ -17,6 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.1",
+    "httpx>=0.27",
     "supernotelib>=0.7.1",
     "sncloud>=0.2.1",
     "pypdf>=4.0",
