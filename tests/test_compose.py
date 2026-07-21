@@ -128,6 +128,47 @@ def test_geometry_roundtrip(tmp_path, device):
             assert not (inner < 128).any(), f"dark ink inside capture interior {cell['id']}"
 
 
+@pytest.mark.parametrize("scale", [0.85, 0.72])
+def test_density_scale_geometry_roundtrip(tmp_path, scale):
+    # A tighter density scales every content constant uniformly; the printed
+    # glyph must still land inside its (normalized, scale-independent) manifest
+    # bbox — the same check convert.targeted uses on the readback path.
+    np = pytest.importorskip("numpy")
+    pdfium = pytest.importorskip("pypdfium2")
+
+    md = ("# Form\n\n- [ ] alpha\n- [ ] beta\n\n{choice: size | S | M | L}\n\n"
+          "{comb: code n=4}\n\n{capture: sketch rows=6}\n\n{ack: reviewed}\n")
+    res = compose(md, tmp_path / "d.pdf", scale=scale)
+    assert json.loads(res.manifest_path.read_text())["layout"] == {"scale": scale}
+    pdf = pdfium.PdfDocument(str(res.pdf_path))
+    arr = np.asarray(pdf[0].render(scale=4).to_pil().convert("L"))
+    for cell in res.cells:
+        if cell["page"] != 1 or cell["type"] not in (
+            "checkbox", "ack", "capture_trigger", "comb", "choice"):
+            continue
+        x0, y0, x1, y1 = _bbox_to_pixels(tuple(cell["bbox_norm"]), arr.shape)
+        assert (arr[y0:y1, x0:x1] < 128).any(), f"no glyph ink in bbox of {cell['id']}"
+
+
+def test_density_packs_more_rows_per_page(tmp_path):
+    md = "# Long list\n\n" + "\n".join(f"- [ ] item {i}" for i in range(30))
+    normal = compose(md, tmp_path / "n.pdf", scale=1.0)
+    dense = compose(md, tmp_path / "d.pdf", scale=0.72)
+    assert dense.pages < normal.pages  # same content, fewer pages
+
+
+def test_density_output_deterministic(tmp_path):
+    md = "# T\n\n- [ ] a\n- [ ] b\n\n{comb: code n=4}\n"
+    a = compose(md, tmp_path / "a.pdf", scale=0.8)
+    b = compose(md, tmp_path / "b.pdf", scale=0.8)
+    assert a.pdf_path.read_bytes() == b.pdf_path.read_bytes()
+
+
+def test_nonpositive_scale_rejected(tmp_path):
+    with pytest.raises(ValueError, match="scale must be positive"):
+        compose("- [ ] a\n", tmp_path / "x.pdf", scale=0)
+
+
 def test_pagination_one_centered_trigger_per_page(tmp_path):
     md = "# Long list\n\n" + "\n".join(f"- [ ] item {i}" for i in range(40))
     res = compose(md, tmp_path / "long.pdf")

@@ -186,9 +186,27 @@ def wrap_runs(segments, size_pt: float, max_px: float,
 
 
 class Renderer:
-    def __init__(self, pdf_path: Path, profile: DeviceProfile = MANTA):
+    def __init__(self, pdf_path: Path, profile: DeviceProfile = MANTA,
+                 scale: float = 1.0):
         register_fonts()
         self.g = profile
+        # Density scale: <1.0 packs content tighter. It multiplies every
+        # content design constant uniformly — fonts, the row height, glyph
+        # boxes, and every baseline/inset offset — so the layout stays
+        # arithmetically self-consistent and the manifest bboxes remain
+        # correct by construction (geometry.py). The canvas, margins, and
+        # chrome envelope are device-physical and never scale. Because the
+        # tickable glyph boxes shrink too, a new scale wants an on-device
+        # preview to confirm pen ergonomics and ink isolation (glyph_pad).
+        self.s = scale
+        self.row_h = ROW * scale
+        self.content_top = profile.content_top * scale
+        self.glyph_box = profile.glyph_box * scale
+        self.glyph_pad = profile.glyph_pad * scale
+        self.trigger_box = profile.trigger_box * scale
+        self.rows_per_page = int(
+            (profile.strip_top - self.u(40) - self.content_top) // self.row_h
+        )
         self.c = rl_canvas.Canvas(
             str(pdf_path), pagesize=(profile.page_w_pt, profile.page_h_pt), invariant=1
         )
@@ -200,10 +218,15 @@ class Renderer:
         self.prev = None
         self._start_page()
 
+    def u(self, v: float) -> float:
+        """Scale a design constant by the density factor. Applies to both
+        px offsets and font sizes — content scales uniformly (see __init__)."""
+        return v * self.s
+
     # -- page machinery ----------------------------------------------------
 
-    def _y(self, row: int | None = None) -> int:
-        return self.g.content_top + (self.row if row is None else row) * ROW
+    def _y(self, row: int | None = None) -> float:
+        return self.content_top + (self.row if row is None else row) * self.row_h
 
     def _start_page(self) -> None:
         self.page += 1
@@ -218,7 +241,7 @@ class Renderer:
         self.c.showPage()
 
     def _ensure(self, rows: int) -> None:
-        if self.g.rows_per_page - self.row < rows:
+        if self.rows_per_page - self.row < rows:
             self._finish_page()
             self._start_page()
 
@@ -256,8 +279,10 @@ class Renderer:
         # box row sits lower, inside the center-visible band.
         g, p = self.g, self.px
         p.line(g.content_x0, g.strip_top, g.content_x1, g.strip_top, lw=2.0, stroke=GRAY)
-        p.text(g.content_x0 + 30, g.strip_top - 14, "command strip", 7.0, BODY, fill=GRAY)
-        p.text(g.content_x1 - 60, g.strip_top - 14, f"p{self.page}", 7.0, BODY, fill=GRAY)
+        p.text(g.content_x0 + self.u(30), g.strip_top - self.u(14),
+               "command strip", self.u(7.0), BODY, fill=GRAY)
+        p.text(g.content_x1 - self.u(60), g.strip_top - self.u(14),
+               f"p{self.page}", self.u(7.0), BODY, fill=GRAY)
 
         # Page-level AI-parse trigger: one centered box per page. It is a
         # pure trigger and carries no page identity — mark-page↔compose-page
@@ -265,16 +290,17 @@ class Renderer:
         # 0014 F3), and a positional/printed fiducial could not confirm it
         # anyway: the isolated-ink readback never sees printed content
         # (composite.py; 0009 F3). The box sits in the center-visible band.
-        tx = g.trigger_center_x0
-        ty = g.strip_top + 70
+        tx = (g.canvas_w - self.trigger_box) / 2
+        ty = g.strip_top + self.u(70)
         label = "capture pg"
-        label_x = tx + (g.trigger_box - width_px(label, BODY, 7.0)) / 2
-        p.text(label_x, g.strip_top + 56, label, 7.0, BODY, fill=GRAY)
-        p.rect(tx, ty, g.trigger_box, g.trigger_box, lw=4.0)
+        label_x = tx + (self.trigger_box - width_px(label, BODY, self.u(7.0))) / 2
+        p.text(label_x, g.strip_top + self.u(56), label, self.u(7.0), BODY, fill=GRAY)
+        p.rect(tx, ty, self.trigger_box, self.trigger_box, lw=4.0)
         self._add_cell(
             "capture_trigger",
             f"capture page {self.page}",
-            tx - 16, ty - 16, g.trigger_box + 32, g.trigger_box + 32,
+            tx - self.u(16), ty - self.u(16),
+            self.trigger_box + self.u(32), self.trigger_box + self.u(32),
             id_=f"cmd.capture.p{self.page}",
         )
 
@@ -288,7 +314,8 @@ class Renderer:
                 self._heading(b)
             elif isinstance(b, Paragraph):
                 self._para_lines(
-                    wrap_runs(b.segments, 11.0, g.content_w - 60), g.content_x0 + 30)
+                    wrap_runs(b.segments, self.u(11.0), g.content_w - self.u(60)),
+                    g.content_x0 + self.u(30), size=self.u(11.0))
             elif isinstance(b, ListItem):
                 self._list_item(b)
             elif isinstance(b, Checkbox):
@@ -307,8 +334,9 @@ class Renderer:
                 self._table(b)
             elif isinstance(b, Quote):
                 self._para_lines(
-                    wrap_runs(b.segments, 11.0, g.content_w - 160, _QUOTE_FONTS),
-                    g.content_x0 + 100, bar=True,
+                    wrap_runs(b.segments, self.u(11.0), g.content_w - self.u(160),
+                              _QUOTE_FONTS),
+                    g.content_x0 + self.u(100), size=self.u(11.0), bar=True,
                 )
             elif isinstance(b, Rule):
                 self._rule()
@@ -325,41 +353,44 @@ class Renderer:
             x += width_px(text, font, size)
 
     def _para_lines(self, lines, x, size=11.0, fill=BLACK, bar=False) -> None:
-        """Deal wrapped lines of draw runs onto rows."""
+        """Deal wrapped lines of draw runs onto rows. `size` must match the
+        size the runs were wrapped at, or drawing drifts from wrapping."""
         for runs in lines:
             self._ensure(1)
             top = self._y()
             if bar:
                 self.px.line(self.g.content_x0 + 16, top, self.g.content_x0 + 16,
-                             top + ROW, lw=4.0, stroke=GRAY)
-            self._draw_runs(x, top + 56, runs, size, fill=fill)
+                             top + self.row_h, lw=4.0, stroke=GRAY)
+            self._draw_runs(x, top + self.u(56), runs, size, fill=fill)
             self.row += 1
 
     def _heading(self, b: Heading) -> None:
         g = self.g
         size, rows, underline = _HEADING_STYLE[min(b.level, 3)]
+        size = self.u(size)
         self._ensure(rows)
         top = self._y()
-        baseline = top + (105 if rows == 2 else 56)
-        self.px.text(g.content_x0 + 30, baseline,
-                     _fit(b.text, BOLD, size, g.content_w - 60), size, BOLD)
+        baseline = top + (self.u(105) if rows == 2 else self.u(56))
+        self.px.text(g.content_x0 + self.u(30), baseline,
+                     _fit(b.text, BOLD, size, g.content_w - self.u(60)), size, BOLD)
         if underline:
-            self.px.line(g.content_x0 + 30, top + 140, g.content_x1 - 30, top + 140, lw=3.0)
+            self.px.line(g.content_x0 + self.u(30), top + self.u(140),
+                         g.content_x1 - self.u(30), top + self.u(140), lw=3.0)
         self.row += rows
 
     def _list_item(self, b: ListItem) -> None:
         g = self.g
-        indent = min(b.depth, 2) * 60
-        mx = g.content_x0 + 30 + indent
-        tx = mx + 70
-        lines = wrap_runs(b.segments, 11.0, g.content_x1 - 30 - tx)
+        indent = min(b.depth, 2) * self.u(60)
+        mx = g.content_x0 + self.u(30) + indent
+        tx = mx + self.u(70)
+        lines = wrap_runs(b.segments, self.u(11.0), g.content_x1 - self.u(30) - tx)
         first = True
         for runs in lines:
             self._ensure(1)
             top = self._y()
             if first and b.marker:
-                self.px.text(mx, top + 56, b.marker, 11.0, BODY)
-            self._draw_runs(tx, top + 56, runs, 11.0)
+                self.px.text(mx, top + self.u(56), b.marker, self.u(11.0), BODY)
+            self._draw_runs(tx, top + self.u(56), runs, self.u(11.0))
             first = False
             self.row += 1
 
@@ -367,29 +398,30 @@ class Renderer:
         g = self.g
         self._ensure(2)
         top = self._y()
-        x0 = g.content_x0 + min(depth, 2) * 60
-        gx, gy, gs = x0 + 40, top + 35, g.glyph_box
+        x0 = g.content_x0 + min(depth, 2) * self.u(60)
+        gx, gy, gs = x0 + self.u(40), top + self.u(35), self.glyph_box
         self.px.rect(gx, gy, gs, gs, lw=4.0)
-        self.px.line(x0, top + 160, g.content_x1, top + 160, lw=1.5, stroke=FAINT)
+        self.px.line(x0, top + self.u(160), g.content_x1, top + self.u(160),
+                     lw=1.5, stroke=FAINT)
         # Long labels wrap onto a second line inside the same 2-row cell;
         # only past two lines does ellipsis truncation kick in.
-        tx = gx + 130
-        max_w = g.content_x1 - tx - 30
-        lines = _wrap(label, BODY, 15.0, max_w)
+        tx = gx + self.u(130)
+        max_w = g.content_x1 - tx - self.u(30)
+        lines = _wrap(label, BODY, self.u(15.0), max_w)
         if len(lines) == 1:
-            self.px.text(tx, top + 98, lines[0], 15.0, BODY)
+            self.px.text(tx, top + self.u(98), lines[0], self.u(15.0), BODY)
         else:
             if len(lines) > 2:
-                lines = [lines[0], _fit(" ".join(lines[1:]), BODY, 15.0, max_w)]
-            self.px.text(tx, top + 68, lines[0], 15.0, BODY)
-            self.px.text(tx, top + 132, lines[1], 15.0, BODY)
+                lines = [lines[0], _fit(" ".join(lines[1:]), BODY, self.u(15.0), max_w)]
+            self.px.text(tx, top + self.u(68), lines[0], self.u(15.0), BODY)
+            self.px.text(tx, top + self.u(132), lines[1], self.u(15.0), BODY)
         # Cell = padded glyph box, not the label band: ink from a neighbor
         # row's exuberant checkmark must not read as this cell's answer
         # (device-calibrated 2026-07-20, see DeviceProfile.glyph_pad).
         self._add_cell(
             ctype, label,
-            gx - g.glyph_pad, gy - g.glyph_pad,
-            g.glyph_box + 2 * g.glyph_pad, g.glyph_box + 2 * g.glyph_pad,
+            gx - self.glyph_pad, gy - self.glyph_pad,
+            self.glyph_box + 2 * self.glyph_pad, self.glyph_box + 2 * self.glyph_pad,
         )
         self.row += 2
 
@@ -397,15 +429,16 @@ class Renderer:
         g = self.g
         # Column count follows the widest option (box + gaps + label + pad),
         # so long options get fewer, wider slots instead of ellipses.
-        widest = max(width_px(o, BODY, 13.0) for o in b.options)
-        cols = max(1, min(4, len(b.options), int(g.content_w // (widest + 220))))
+        widest = max(width_px(o, BODY, self.u(13.0)) for o in b.options)
+        cols = max(1, min(4, len(b.options), int(g.content_w // (widest + self.u(220)))))
         chunks = [b.options[i : i + cols] for i in range(0, len(b.options), cols)]
         slot_w = g.content_w // cols
-        self._ensure(min(1 + 2 * len(chunks), g.rows_per_page))
+        self._ensure(min(1 + 2 * len(chunks), self.rows_per_page))
         top = self._y()
         self.px.text(
-            g.content_x0 + 30, top + 52,
-            _fit(b.label + ":", BODY, 11.0, g.content_w - 60), 11.0, BODY, fill=GRAY,
+            g.content_x0 + self.u(30), top + self.u(52),
+            _fit(b.label + ":", BODY, self.u(11.0), g.content_w - self.u(60)),
+            self.u(11.0), BODY, fill=GRAY,
         )
         self.row += 1
         for chunk in chunks:
@@ -413,32 +446,36 @@ class Renderer:
             top = self._y()
             for j, opt in enumerate(chunk):
                 sx = g.content_x0 + j * slot_w
-                bx, by = sx + 30, top + 35
-                self.px.rect(bx, by, g.glyph_box, g.glyph_box, lw=4.0)
+                bx, by = sx + self.u(30), top + self.u(35)
+                self.px.rect(bx, by, self.glyph_box, self.glyph_box, lw=4.0)
                 self.px.text(
-                    sx + 150, top + 98, _fit(opt, BODY, 13.0, slot_w - 190), 13.0, BODY
+                    sx + self.u(150), top + self.u(98),
+                    _fit(opt, BODY, self.u(13.0), slot_w - self.u(190)), self.u(13.0), BODY
                 )
                 self._add_cell(
                     "choice", f"{b.label}: {opt}",
-                    bx - g.glyph_pad, by - g.glyph_pad,
-                    g.glyph_box + 2 * g.glyph_pad, g.glyph_box + 2 * g.glyph_pad,
+                    bx - self.glyph_pad, by - self.glyph_pad,
+                    self.glyph_box + 2 * self.glyph_pad,
+                    self.glyph_box + 2 * self.glyph_pad,
                     id_=f"choice.{_slug(b.label)}.{_slug(opt)}",
                 )
             self.row += 2
 
     def _capture(self, b: Capture) -> None:
         g = self.g
-        k = max(2, min(b.rows, g.rows_per_page - 2))
+        k = max(2, min(b.rows, self.rows_per_page - 2))
         self._ensure(1 + k)
         top = self._y()
         self.px.text(
-            g.content_x0 + 30, top + 52,
-            _fit(f"CAPTURE - {b.label} (draw or write below)", BODY, 10.0, g.content_w - 60),
-            10.0, BODY, fill=GRAY,
+            g.content_x0 + self.u(30), top + self.u(52),
+            _fit(f"CAPTURE - {b.label} (draw or write below)", BODY, self.u(10.0),
+                 g.content_w - self.u(60)),
+            self.u(10.0), BODY, fill=GRAY,
         )
         self.row += 1
-        capx, capy, capw, caph = g.content_x0, self._y(), g.content_w, k * ROW - 20
-        for yy in range(capy + 120, capy + caph - 30, 120):
+        capx, capy, capw, caph = g.content_x0, self._y(), g.content_w, k * self.row_h - self.u(20)
+        step = max(1, int(self.u(120)))
+        for yy in range(int(capy + self.u(120)), int(capy + caph - self.u(30)), step):
             self.px.line(capx + 40, yy, capx + capw - 40, yy, lw=1.5, stroke=FAINT, dash=(2, 4))
         for cx, dx in ((capx, 1), (capx + capw, -1)):
             for cy, dy in ((capy, 1), (capy + caph, -1)):
@@ -449,12 +486,12 @@ class Renderer:
     def _code(self, b: CodeBlock) -> None:
         g = self.g
         for raw in b.lines or [""]:
-            for ln in _char_wrap(raw, MONO, 9.5, g.content_w - 140):
+            for ln in _char_wrap(raw, MONO, self.u(9.5), g.content_w - self.u(140)):
                 self._ensure(1)
                 top = self._y()
-                self.px.line(g.content_x0 + 16, top, g.content_x0 + 16, top + ROW,
+                self.px.line(g.content_x0 + 16, top, g.content_x0 + 16, top + self.row_h,
                              lw=4.0, stroke=FAINT)
-                self.px.text(g.content_x0 + 70, top + 52, ln, 9.5, MONO)
+                self.px.text(g.content_x0 + self.u(70), top + self.u(52), ln, self.u(9.5), MONO)
                 self.row += 1
 
     def _table(self, b: Table) -> None:
@@ -474,14 +511,15 @@ class Renderer:
             text = "  ".join(
                 (r[j] if j < len(r) else "").ljust(widths[j]) for j in range(ncols)
             ).rstrip()
-            for ln in _char_wrap(text, MONO, 9.5, g.content_w - 100):
+            for ln in _char_wrap(text, MONO, self.u(9.5), g.content_w - self.u(100)):
                 self._ensure(1)
                 top = self._y()
-                self.px.text(g.content_x0 + 50, top + 52, ln, 9.5, MONO)
+                self.px.text(g.content_x0 + self.u(50), top + self.u(52), ln, self.u(9.5), MONO)
                 if idx == 0:
                     self.px.line(
-                        g.content_x0 + 50, top + 66,
-                        g.content_x0 + 50 + width_px(ln, MONO, 9.5), top + 66,
+                        g.content_x0 + self.u(50), top + self.u(66),
+                        g.content_x0 + self.u(50) + width_px(ln, MONO, self.u(9.5)),
+                        top + self.u(66),
                         lw=1.5, stroke=GRAY,
                     )
                 self.row += 1
@@ -490,24 +528,25 @@ class Renderer:
         """Comb boxes (0012 F3): n joined character cells. Segmentation
         raises later HWR accuracy; the manifest carries each box's bbox."""
         g = self.g
-        box_w, box_h = 110, 130
-        n = max(1, min(b.n, (g.content_w - 80) // box_w))
+        box_w, box_h = self.u(110), self.u(130)
+        n = max(1, min(b.n, int((g.content_w - self.u(80)) // box_w)))
         self._ensure(3)
         top = self._y()
         self.px.text(
-            g.content_x0 + 30, top + 52,
-            _fit(b.label + ":", BODY, 11.0, g.content_w - 60), 11.0, BODY, fill=GRAY,
+            g.content_x0 + self.u(30), top + self.u(52),
+            _fit(b.label + ":", BODY, self.u(11.0), g.content_w - self.u(60)),
+            self.u(11.0), BODY, fill=GRAY,
         )
         self.row += 1
         top = self._y()
-        cx, cy = g.content_x0 + 40, top + 15
+        cx, cy = g.content_x0 + self.u(40), top + self.u(15)
         self.px.rect(cx, cy, n * box_w, box_h, lw=4.0)
         for j in range(1, n):
             self.px.line(cx + j * box_w, cy, cx + j * box_w, cy + box_h, lw=2.0)
         boxes = [g.norm(cx + j * box_w, cy, box_w, box_h) for j in range(n)]
         self._add_cell(
             "comb", b.label,
-            cx - 20, cy - 20, n * box_w + 40, box_h + 40,
+            cx - self.u(20), cy - self.u(20), n * box_w + self.u(40), box_h + self.u(40),
             id_=f"comb.{_slug(b.label)}",
             n=n,
             boxes_norm=boxes,
@@ -518,15 +557,17 @@ class Renderer:
         g = self.g
         self._ensure(1)
         top = self._y()
-        self.px.line(g.content_x0 + 30, top + 40, g.content_x1 - 30, top + 40,
-                     lw=2.0, stroke=GRAY)
+        self.px.line(g.content_x0 + self.u(30), top + self.u(40),
+                     g.content_x1 - self.u(30), top + self.u(40), lw=2.0, stroke=GRAY)
         self.row += 1
 
     def _placeholder(self, b: Placeholder) -> None:
         g = self.g
         self._ensure(2)
         top = self._y()
-        self.px.rect(g.content_x0 + 20, top + 15, g.content_w - 40, 130, lw=2.0, stroke=FAINT)
-        self.px.text(g.content_x0 + 60, top + 90,
-                     _fit(f"[{b.detail}]", BODY, 10.0, g.content_w - 120), 10.0, BODY, fill=GRAY)
+        self.px.rect(g.content_x0 + self.u(20), top + self.u(15),
+                     g.content_w - self.u(40), self.u(130), lw=2.0, stroke=FAINT)
+        self.px.text(g.content_x0 + self.u(60), top + self.u(90),
+                     _fit(f"[{b.detail}]", BODY, self.u(10.0), g.content_w - self.u(120)),
+                     self.u(10.0), BODY, fill=GRAY)
         self.row += 2

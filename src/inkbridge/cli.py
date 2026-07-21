@@ -89,16 +89,31 @@ def pull(remote_path: str, output: Path) -> None:
               type=click.Choice(["manta", "nomad"]),
               help="Target device profile. The nomad profile's chrome envelope "
                    "is assumed, not device-calibrated.")
+@click.option("--density", default="dense", show_default=True,
+              type=click.Choice(["normal", "compact", "dense"]),
+              help="Layout density preset. Tighter presets shrink fonts, rows, "
+                   "and tickable boxes uniformly to fit more per page. 'dense' is "
+                   "the device-validated default; 'normal' is the calibrated 1.0 "
+                   "baseline. Overridden by --scale.")
+@click.option("--scale", type=float, default=None,
+              help="Exact density scale (1.0 = baseline; <1 packs tighter). "
+                   "Overrides --density; for previewing arbitrary values.")
 def compose(source: Path, output: Path | None, manifest_path: Path | None,
-            device: str) -> None:
+            device: str, density: str, scale: float | None) -> None:
     """Render markdown to a row-grid PDF + input-area manifest (Phase 2.5)."""
+    from inkbridge.compose import DENSITIES
     from inkbridge.compose import compose as compose_markdown
 
     output = output or source.with_suffix(".pdf")
-    result = compose_markdown(source, output, manifest_path, device=device)
+    scale = scale if scale is not None else DENSITIES[density]
+    try:
+        result = compose_markdown(source, output, manifest_path,
+                                  device=device, scale=scale)
+    except ValueError as e:
+        raise click.BadParameter(str(e)) from e
     click.echo(
-        f"Wrote {result.pdf_path} ({result.pages} page(s), {device}) and "
-        f"{result.manifest_path} ({len(result.cells)} cells, doc_id {result.doc_id})"
+        f"Wrote {result.pdf_path} ({result.pages} page(s), {device}, scale {scale:g}) "
+        f"and {result.manifest_path} ({len(result.cells)} cells, doc_id {result.doc_id})"
     )
 
 
