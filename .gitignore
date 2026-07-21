@@ -14,7 +14,12 @@ build/
 .env
 notes/local/
 captures/
-device-backup-2026-07-19/
+device-backup-*/
+
+# Dispatch-ledger instance data (which docs THIS operator sent) and pulled
+# .mark responses — machine-specific, never public
+inkbridge-ledger.json
+responses/
 
 # Personal Private Cloud deployment instance (secrets, real data, evidence,
 # runtime volumes). The PUBLIC, reusable deploy recipe lives in deploy/ itself;

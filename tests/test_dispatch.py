@@ -1,0 +1,147 @@
+"""Dispatch-ledger tests: entry construction, persistence, and the
+status join (Analysis 0011: base md5 anchor -> sibling .mark locator ->
+.mark md5 as the ink signal) against the mocked private cloud.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from pathlib import Path
+
+import pytest
+from fake_cloud import FakeServer
+
+from inkbridge.dispatch import Ledger, acknowledge, check_entries, entry_for
+from inkbridge.transport.private_cloud import PCClient
+
+MANIFEST = {
+    "doc_id": "form-abc12345",
+    "cells": [
+        {"id": "checkbox.milk", "type": "checkbox", "page": 1},
+        {"id": "choice.size.m", "type": "choice", "page": 1},
+        {"id": "cmd.capture.p1", "type": "capture_trigger", "page": 1},
+    ],
+}
+
+
+def _dispatch(client: PCClient, tmp_path: Path, manifest=MANIFEST,
+              name="form.pdf", data=b"%PDF-form") -> dict:
+    f = tmp_path / name
+    f.write_bytes(data)
+    info = client.push(f, "Document")
+    return entry_for(f, info, manifest,
+                     tmp_path / "form.manifest.json" if manifest else None)
+
+
+def test_entry_for_splits_cells(client: PCClient, tmp_path: Path):
+    entry = _dispatch(client, tmp_path)
+    assert entry["doc_id"] == "form-abc12345"
+    assert entry["response_cells"] == ["checkbox.milk", "choice.size.m"]
+    assert entry["trigger_cells"] == ["cmd.capture.p1"]
+    assert entry["base_md5"] == hashlib.md5(b"%PDF-form").hexdigest()
+    assert entry["remote"] == {"folder": "Document", "name": "form.pdf"}
+    assert entry["mark_md5"] is None and entry["acknowledged_at"] is None
+    assert entry["dispatched_at"]
+
+
+def test_entry_for_without_manifest(client: PCClient, tmp_path: Path):
+    entry = _dispatch(client, tmp_path, manifest=None)
+    md5 = hashlib.md5(b"%PDF-form").hexdigest()
+    assert entry["doc_id"] == f"form-{md5[:8]}"
+    assert entry["manifest"] is None
+    assert entry["response_cells"] == [] and entry["trigger_cells"] == []
+
+
+def test_ledger_roundtrip_and_upsert(tmp_path: Path):
+    path = tmp_path / "ledger.json"
+    ledger = Ledger(path)
+    a = {"doc_id": "a-1", "remote": {"folder": "Document", "name": "a.pdf"}}
+    b = {"doc_id": "b-1", "remote": {"folder": "Document", "name": "b.pdf"}}
+    ledger.upsert(a)
+    ledger.upsert(b)
+    ledger.save()
+
+    reloaded = Ledger(path)
+    assert [e["doc_id"] for e in reloaded.entries] == ["a-1", "b-1"]
+    assert reloaded.find("a-1") == a and reloaded.find("nope") is None
+
+    # re-dispatch under the same remote name supersedes the old expectation
+    reloaded.upsert({"doc_id": "a-2",
+                     "remote": {"folder": "Document", "name": "a.pdf"}})
+    assert [e["doc_id"] for e in reloaded.entries] == ["b-1", "a-2"]
+
+
+def test_status_lifecycle(client: PCClient, server: FakeServer, tmp_path: Path):
+    entry = _dispatch(client, tmp_path)
+
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "waiting" and not r["base_changed"]
+    assert r["mark_md5"] is None
+
+    # device syncs ink back: the .mark sidecar appears as its own row
+    server.rows["form.pdf.mark"] = server.row(
+        "form.pdf.mark", "a" * 32, 100, "id-form.pdf.mark")
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "responded" and r["mark_md5"] == "a" * 32
+
+    acknowledge(entry, r["mark_md5"])
+    assert entry["acknowledged_at"]
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "seen"
+
+    # more ink lands: .mark md5 churns
+    server.rows["form.pdf.mark"]["md5"] = "b" * 32
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "changed" and r["mark_md5"] == "b" * 32
+
+    # base md5 drift breaks the ink-pure anchor -> flagged
+    server.rows["form.pdf"]["md5"] = "c" * 32
+    (r,) = check_entries([entry], client)
+    assert r["base_changed"]
+
+    # base row gone entirely
+    del server.rows["form.pdf"]
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "missing"
+
+
+def test_status_missing_folder_is_missing_not_error(client: PCClient):
+    entry = {"doc_id": "x-1", "base_md5": "0" * 32, "mark_md5": None,
+             "remote": {"folder": "Gone", "name": "x.pdf"}}
+    (r,) = check_entries([entry], client)
+    assert r["state"] == "missing"
+
+
+def test_check_entries_one_listing_per_folder(client: PCClient, server: FakeServer,
+                                              tmp_path: Path):
+    entries = [_dispatch(client, tmp_path, name=f"f{i}.pdf") for i in range(3)]
+    calls = {"n": 0}
+    real_ls = client.ls
+
+    def counting_ls(directory_id: int = 0):
+        calls["n"] += 1
+        return real_ls(directory_id)
+
+    client.ls = counting_ls
+    check_entries(entries, client)
+    # resolve_dir("Document") lists the root once, then Document once
+    assert calls["n"] == 2
+
+
+def test_default_ledger_path_env(monkeypatch, tmp_path: Path):
+    from inkbridge.dispatch import default_ledger_path
+
+    monkeypatch.delenv("INKBRIDGE_LEDGER", raising=False)
+    assert default_ledger_path() == Path("inkbridge-ledger.json")
+    monkeypatch.setenv("INKBRIDGE_LEDGER", str(tmp_path / "l.json"))
+    assert default_ledger_path() == tmp_path / "l.json"
+
+
+def test_entry_without_manifest_never_pretends_cells(client: PCClient,
+                                                     tmp_path: Path):
+    # collect refuses manifest-less entries at the CLI layer; the ledger
+    # layer must make that detectable rather than fabricating cell lists.
+    entry = _dispatch(client, tmp_path, manifest=None)
+    assert not entry["manifest"]
+    with pytest.raises(TypeError):
+        Path(entry["manifest"])  # None is not a path — the CLI checks first

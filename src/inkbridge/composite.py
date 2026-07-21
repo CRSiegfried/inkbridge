@@ -1,6 +1,6 @@
 """Capture compositing (Analysis 0012 finding 5): decoded ``.pdf.mark``
-ink overlaid on the rendered base PDF page at the device's 1920×2560
-canvas.
+ink overlaid on the rendered base PDF page at the device's note canvas
+resolution (the mark decode's own shape).
 
 This is the *capture render* half of the two-render discipline: the
 composite is what gets cropped and dispatched to a VLM — annotation on top
@@ -10,7 +10,7 @@ byte-level absent.
 
 Alignment rests on the byte-stable round-trip (0003 F5: the device never
 modifies a pushed PDF, so push-time coordinates stay valid) and on the
-compose template drawing the page as the same 1920×2560 sheet the mark
+compose template drawing the page as the same device-canvas sheet the mark
 decode produces. The corner registration ticks compose prints are the
 built-in alignment check: synthetic ink drawn at tick coordinates in mark
 space must land on the rendered ticks.
@@ -26,13 +26,14 @@ from inkbridge.convert.targeted import (
     decode_page_gray,
 )
 
-CANVAS_W, CANVAS_H = 1920, 2560
+CANVAS_W, CANVAS_H = 1920, 2560  # Manta default; composite_page follows the mark
 
 
-def render_base_page(pdf_path: Path, page_number: int):
+def render_base_page(pdf_path: Path, page_number: int,
+                     canvas: tuple[int, int] = (CANVAS_W, CANVAS_H)):
     """Rasterize one PDF page (1-indexed) to an RGB numpy array at the
     device canvas resolution. Pages with the compose template's 3:4 sheet
-    land on 1920×2560 exactly; other aspect ratios are scaled to canvas
+    land on the canvas exactly; other aspect ratios are scaled to canvas
     width and must match the canvas within a pixel or a ValueError is
     raised (a mismatched base cannot be composited against mark space).
     """
@@ -43,13 +44,13 @@ def render_base_page(pdf_path: Path, page_number: int):
     try:
         page = pdf[page_number - 1]
         w_pt, _ = page.get_size()
-        img = page.render(scale=CANVAS_W / w_pt).to_pil().convert("RGB")
+        img = page.render(scale=canvas[0] / w_pt).to_pil().convert("RGB")
     finally:
         pdf.close()
-    if img.size != (CANVAS_W, CANVAS_H):
+    if img.size != canvas:
         raise ValueError(
             f"page {page_number} of {pdf_path} renders to {img.size}, "
-            f"not the {CANVAS_W}x{CANVAS_H} device canvas — wrong aspect "
+            f"not the {canvas[0]}x{canvas[1]} device canvas — wrong aspect "
             "ratio for mark-space compositing")
     return np.asarray(img).copy()
 
@@ -85,12 +86,15 @@ def composite_page(
     ink_color: tuple[int, int, int] = (0, 0, 0),
 ):
     """Render base page + decode mark page + overlay. Returns a PIL Image
-    ready for the VLM (or for cropping via ``composite_region``).
+    ready for the VLM (or for cropping via ``composite_region``). The mark
+    decode's own shape is the device canvas, so the base renders to match
+    it — no per-device constant on this path.
     """
     from PIL import Image
 
-    base = render_base_page(base_pdf, page_number)
     ink = decode_page_gray(mark_path, page_number)
+    h, w = ink.shape
+    base = render_base_page(base_pdf, page_number, canvas=(w, h))
     return Image.fromarray(composite_arrays(
         base, ink, ink_gray_cutoff=ink_gray_cutoff, ink_color=ink_color))
 
@@ -111,5 +115,5 @@ def composite_region(
     img = composite_page(
         base_pdf, mark_path, page_number,
         ink_gray_cutoff=ink_gray_cutoff, ink_color=ink_color)
-    x0, y0, x1, y1 = _bbox_to_pixels(bbox_norm, (CANVAS_H, CANVAS_W), pad_px)
+    x0, y0, x1, y1 = _bbox_to_pixels(bbox_norm, (img.height, img.width), pad_px)
     return img.crop((x0, y0, x1, y1))

@@ -137,10 +137,17 @@ def read_mark(
     """Decode every manifest page of ``mark_path`` once and run the
     three-way decision over each cell.
 
-    Page identity note: this assumes mark-page k corresponds to PDF page k,
-    which is observed but unconfirmed ordering (0009 F7); the positional
-    trigger fiducial that would confirm it per-document is untested pending
-    the annotated sampler.
+    Page identity is positional — mark-page k is compose-page k (the device
+    never modifies a pushed PDF, 0014 F3). No fiducial confirms it: a
+    printed/positional mark can't survive the isolated-ink readback
+    (composite.py; 0009 F3), and a page-count guard can't substitute either,
+    because the mark is *sparse* (only annotated pages materialize) and
+    carries no page index (0009 F7) — so a blank page and a deleted page are
+    indistinguishable by count. This decode therefore assumes a **dense**
+    mark: every manifest page was annotated, so mark-page k lines up with
+    compose-page k. Sparse multi-page marks (a page left entirely blank) are
+    an open problem — see ADR-0004; ``decode_page_gray`` will raise
+    IndexError for a manifest page absent from the mark.
     """
     if isinstance(manifest, Path):
         manifest = json.loads(manifest.read_text())

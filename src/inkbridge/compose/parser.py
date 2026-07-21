@@ -18,7 +18,7 @@ crashes"):
 
 Extended directives are plain paragraphs, so any markdown editor accepts
 them:  {capture: label rows=6}   {choice: label | a | b | c}   {ack: label}
-{slider: label | low | high}   {comb: label n=8}
+{comb: label n=8}
 A malformed directive stays a visible Paragraph rather than erroring.
 """
 
@@ -119,19 +119,12 @@ class Ack:
 
 
 @dataclass
-class Slider:
-    label: str
-    left: str = ""
-    right: str = ""
-
-
-@dataclass
 class Comb:
     label: str
     n: int = 8
 
 
-_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack|slider|comb)\s*:\s*(.+?)\s*\}$", re.S)
+_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack|comb)\s*:\s*(.+?)\s*\}$", re.S)
 _ROWS_RE = re.compile(r"\s+rows\s*=\s*(\d+)\s*$")
 _N_RE = re.compile(r"\s+n\s*=\s*(\d+)\s*$")
 _TASK_RE = re.compile(r"^\[( |x|X)\]\s+(.*)$", re.S)
@@ -151,13 +144,6 @@ def _directive(text: str):
         return Capture(body.strip() or "capture", rows)
     if kind == "ack":
         return Ack(body.strip() or "acknowledged")
-    if kind == "slider":
-        parts = [p.strip() for p in body.split("|")]
-        if not parts[0]:
-            return None
-        left = parts[1] if len(parts) > 1 else ""
-        right = parts[2] if len(parts) > 2 else ""
-        return Slider(parts[0], left, right)
     if kind == "comb":
         n = 8
         nm = _N_RE.search(body)
