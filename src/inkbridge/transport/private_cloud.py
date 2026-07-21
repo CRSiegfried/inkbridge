@@ -134,20 +134,38 @@ class PCClient:
         )
         return data["userFileVOList"]
 
-    def dir_id(self, name: str) -> int:
-        for item in self.ls():
-            if item["fileName"] == name and item["isFolder"] == "Y":
-                return int(item["id"])
-        raise FileNotFoundError(f"root folder not found: {name}")
+    def resolve_dir(self, folder: str) -> int:
+        """Directory id for a folder path — ``"Document"`` or nested like
+        ``"Document/Projects"`` — walking one listing per segment from the
+        root. ``""`` / ``"/"`` resolve to the root itself. Raises
+        FileNotFoundError naming the first missing segment; there is no
+        folder-creation endpoint in the captured dialect, so folders must
+        already exist (made on-device or in the web UI).
+        """
+        did = 0
+        walked: list[str] = []
+        for seg in folder.strip("/").split("/"):
+            if not seg:
+                continue
+            row = next((i for i in self.ls(did)
+                        if i["fileName"] == seg and i["isFolder"] == "Y"), None)
+            if row is None:
+                where = "/".join(walked) or "the root"
+                raise FileNotFoundError(
+                    f"folder {seg!r} not found in {where} (folders are not "
+                    "created by inkbridge — make it on the device or web UI)")
+            walked.append(seg)
+            did = int(row["id"])
+        return did
 
     def find(self, folder: str, filename: str) -> dict | None:
-        for item in self.ls(self.dir_id(folder)):
+        for item in self.ls(self.resolve_dir(folder)):
             if item["fileName"] == filename:
                 return item
         return None
 
     def push(self, path: Path, folder: str = "Document", *, verify: bool = True) -> dict:
-        """Upload ``path`` into the named root folder.
+        """Upload ``path`` into the named folder (nested paths ok).
 
         Checks the ``oss/upload`` response body (a stripped signature fails
         as 200/success:false — 0013 F7) and, with ``verify``, confirms the
@@ -157,7 +175,7 @@ class PCClient:
         """
         blob = path.read_bytes()
         md5 = _md5(blob)
-        did = self.dir_id(folder)
+        did = self.resolve_dir(folder)
         try:
             apply_ = self._call(
                 "/file/upload/apply",
@@ -204,13 +222,14 @@ class PCClient:
         return {"md5": md5, "size": len(blob), "folder": folder, "name": path.name}
 
     def delete(self, folder: str, filenames: str | list[str]) -> list[str]:
-        """Delete files from a root folder (sncloud-dialect ``/file/delete``
-        with an idList). All names must exist in the listing; raises
-        FileNotFoundError naming the missing ones before deleting anything.
+        """Delete files from a folder (sncloud-dialect ``/file/delete``
+        with an idList; nested folder paths ok). All names must exist in the
+        listing; raises FileNotFoundError naming the missing ones before
+        deleting anything.
         """
         if isinstance(filenames, str):
             filenames = [filenames]
-        did = self.dir_id(folder)
+        did = self.resolve_dir(folder)
         rows = {i["fileName"]: i for i in self.ls(did)}
         missing = [n for n in filenames if n not in rows]
         if missing:
