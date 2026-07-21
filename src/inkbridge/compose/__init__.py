@@ -69,13 +69,6 @@ def compose(
         "page_size_pt": [profile.page_w_pt, profile.page_h_pt],
         "pages": renderer.page,
         "source_md5": source_md5,
-        "trigger_slots": {
-            "scheme": "center-out",
-            "center_x0": profile.trigger_center_x0,
-            "pitch": profile.trigger_pitch,
-            "box": profile.trigger_box,
-            "capacity": profile.trigger_slots,
-        },
         "cells": renderer.cells,
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)

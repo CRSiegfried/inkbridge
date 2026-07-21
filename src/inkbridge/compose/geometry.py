@@ -39,7 +39,7 @@ class DeviceProfile:
     side_safe_bottom: int
     center_safe_bottom: int
     # The center-bottom band the reader UI leaves visible below
-    # side_safe_bottom; trigger slots must stay inside it.
+    # side_safe_bottom; the centered trigger box must stay inside it.
     center_x0: int
     center_x1: int
     # True only when the envelope came from the on-device ruler fixture.
@@ -51,8 +51,7 @@ class DeviceProfile:
     content_top: int = 160
     glyph_box: int = 90  # tickable printed box (checkbox/ack/choice)
     glyph_pad: int = 20  # manifest cell = box + pad (first device calibration)
-    trigger_pitch: int = 96
-    trigger_box: int = 64
+    trigger_box: int = 64  # page-level AI-parse trigger, centered per page
 
     @property
     def page_w_pt(self) -> float:
@@ -81,18 +80,10 @@ class DeviceProfile:
 
     @property
     def trigger_center_x0(self) -> int:
+        """Left edge of the trigger box, horizontally centered. The box is
+        the same on every page — it carries no page identity (that is
+        positional; a fiducial can't survive the isolated-ink readback)."""
         return (self.canvas_w - self.trigger_box) // 2
-
-    @property
-    def trigger_slots(self) -> int:
-        return (self.center_x1 - self.center_x0 - self.trigger_box) // self.trigger_pitch + 1
-
-    def trigger_slot_x0(self, slot: int) -> int:
-        """Left edge of a trigger slot's box: center-out, 0,+1,-1,+2,-2,…×pitch.
-        Every offset stays inside center_x0..center_x1 for slot < trigger_slots.
-        """
-        k = (slot + 1) // 2
-        return self.trigger_center_x0 + (k if slot % 2 == 1 else -k) * self.trigger_pitch
 
     def norm(self, x: float, y: float, w: float, h: float) -> list[float]:
         """Normalized top-left [x, y, w, h] bbox — the convert.targeted contract."""

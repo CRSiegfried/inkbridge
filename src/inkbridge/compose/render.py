@@ -259,12 +259,13 @@ class Renderer:
         p.text(g.content_x0 + 30, g.strip_top - 14, "command strip", 7.0, BODY, fill=GRAY)
         p.text(g.content_x1 - 60, g.strip_top - 14, f"p{self.page}", 7.0, BODY, fill=GRAY)
 
-        # Positional fiducial: page k's trigger box occupies slot k
-        # (center-out — see DeviceProfile.trigger_slot_x0). Pages beyond
-        # capacity share the last slot (fiducial_unique=false) and fall
-        # back to the observed-ordering assumption (0012 finding 4).
-        slot = min(self.page - 1, g.trigger_slots - 1)
-        tx = g.trigger_slot_x0(slot)
+        # Page-level AI-parse trigger: one centered box per page. It is a
+        # pure trigger and carries no page identity — mark-page↔compose-page
+        # mapping is positional (the device never modifies a pushed PDF,
+        # 0014 F3), and a positional/printed fiducial could not confirm it
+        # anyway: the isolated-ink readback never sees printed content
+        # (composite.py; 0009 F3). The box sits in the center-visible band.
+        tx = g.trigger_center_x0
         ty = g.strip_top + 70
         label = "capture pg"
         label_x = tx + (g.trigger_box - width_px(label, BODY, 7.0)) / 2
@@ -275,8 +276,6 @@ class Renderer:
             f"capture page {self.page}",
             tx - 16, ty - 16, g.trigger_box + 32, g.trigger_box + 32,
             id_=f"cmd.capture.p{self.page}",
-            slot=slot,
-            fiducial_unique=self.page <= g.trigger_slots,
         )
 
     # -- block renderers ---------------------------------------------------

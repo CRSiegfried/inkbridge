@@ -438,6 +438,53 @@ def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
 
 
 @main.command()
+@click.argument("manifest", type=click.Path(path_type=Path))
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+@click.pass_context
+def proof(ctx: click.Context, manifest: Path, as_json: bool) -> None:
+    """Device-free self-test (Analysis 0017 F8): stamp synthetic ink into
+    every cell of MANIFEST, read it back, and assert every cell reads
+    ANSWERED. Catches manifest/readback drift with no device and no human.
+
+    Contract (ADR-0002): exit 0 when every cell passes, 1 when any cell fails
+    to read ANSWERED, 4 for a missing manifest. The --json result carries the
+    per-cell failures.
+    """
+    import json as jsonlib
+
+    from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.proof import proof as run_proof
+    from inkbridge.proof import proof_payload
+
+    if not manifest.exists():
+        raise CliError(f"manifest not found: {manifest}", code="not_found",
+                       exit_status=Exit.NOT_FOUND, as_json=as_json)
+    try:
+        manifest_data = jsonlib.loads(manifest.read_text())
+    except jsonlib.JSONDecodeError as e:
+        raise CliError(f"manifest is not valid JSON: {manifest} ({e})",
+                       code="invalid_manifest", exit_status=Exit.ERROR,
+                       as_json=as_json) from e
+
+    result = run_proof(manifest_data)
+    if as_json:
+        emit_result(proof_payload(result), "proof.v1")
+    else:
+        click.echo(f"doc:   {result.doc_id}")
+        click.echo(f"cells: {result.cells} across {result.pages} page(s)")
+        if result.ok:
+            click.echo("PASS — every cell read ANSWERED")
+        else:
+            click.echo(f"FAIL — {len(result.failures)} cell(s) did not read ANSWERED:")
+            for f in result.failures:
+                click.echo(
+                    f"  p{f.page} {f.id} ({f.type}): {f.decision} "
+                    f"@ {f.coverage * 100:.4f}%")
+    if not result.ok:
+        ctx.exit(int(Exit.ERROR))
+
+
+@main.command()
 @click.argument("base", type=click.Path(exists=True, path_type=Path))
 @click.argument("addition", type=click.Path(exists=True, path_type=Path))
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)

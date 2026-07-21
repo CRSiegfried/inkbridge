@@ -128,15 +128,17 @@ def test_geometry_roundtrip(tmp_path, device):
             assert not (inner < 128).any(), f"dark ink inside capture interior {cell['id']}"
 
 
-def test_pagination_and_fiducial_slots(tmp_path):
+def test_pagination_one_centered_trigger_per_page(tmp_path):
     md = "# Long list\n\n" + "\n".join(f"- [ ] item {i}" for i in range(40))
     res = compose(md, tmp_path / "long.pdf")
     assert res.pages >= 2
     triggers = [c for c in res.cells if c["type"] == "capture_trigger"]
     assert len(triggers) == res.pages
+    # The trigger box is page-independent (centered), not a positional
+    # fiducial: same x on every page, and it carries no page-identity extras.
+    assert len({t["bbox_norm"][0] for t in triggers}) == 1
     for t in triggers:
-        assert t["slot"] == min(t["page"] - 1, MANTA.trigger_slots - 1)
-        assert t["fiducial_unique"] == (t["page"] <= MANTA.trigger_slots)
+        assert "slot" not in t and "fiducial_unique" not in t
     # every page carries exactly one trigger and no other strip cells
     for p in range(1, res.pages + 1):
         strip = [c for c in res.cells if c["id"].startswith("cmd.") and c["page"] == p]
@@ -202,27 +204,22 @@ def test_choice_columns_follow_option_width(tmp_path):
 
 
 @pytest.mark.parametrize("device", sorted(PROFILES))
-def test_trigger_slots_center_out(device):
+def test_trigger_box_centered_in_visible_band(device):
     g = PROFILES[device]
-    xs = [g.trigger_slot_x0(s) for s in range(g.trigger_slots)]
-    assert xs[0] == g.trigger_center_x0  # page 1 dead center
-    assert xs[1] == g.trigger_center_x0 + g.trigger_pitch
-    assert xs[2] == g.trigger_center_x0 - g.trigger_pitch
-    assert len(set(xs)) == g.trigger_slots  # every page distinct
-    for x in xs:
-        assert g.center_x0 <= x and x + g.trigger_box <= g.center_x1
+    x = g.trigger_center_x0
+    assert x == (g.canvas_w - g.trigger_box) // 2  # dead center
+    assert g.center_x0 <= x and x + g.trigger_box <= g.center_x1
 
 
 def test_device_profiles_share_physical_constants():
     # Both panels are ~300 PPI: the hand-ergonomic sizes must not drift
     # between profiles — only canvas and chrome envelope may differ.
     manta, nomad = PROFILES["manta"], PROFILES["nomad"]
-    for attr in ("glyph_box", "glyph_pad", "trigger_pitch", "trigger_box",
+    for attr in ("glyph_box", "glyph_pad", "trigger_box",
                  "margin_x", "content_top"):
         assert getattr(manta, attr) == getattr(nomad, attr)
     assert manta.chrome_calibrated and not nomad.chrome_calibrated
     assert (nomad.canvas_w, nomad.canvas_h) == (1404, 1872)
-    assert nomad.trigger_slots >= 3  # center-out layout needs real capacity
 
 
 def test_manifest_carries_device_block(tmp_path):
