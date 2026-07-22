@@ -75,11 +75,16 @@ export INKBRIDGE_CLOUD_URL="https://your-private-cloud.example.com"
 export INKBRIDGE_CLOUD_EMAIL="you@example.com"
 export INKBRIDGE_CLOUD_PASSWORD="…"
 
+inkbridge doctor                          # verify config, connectivity, and login
 inkbridge compose notes.md -o notes.pdf   # emits notes.pdf + notes.manifest.json
 inkbridge dispatch notes.pdf              # push, recording it in the ledger
 inkbridge status                          # which dispatched docs have new marks
 inkbridge collect <doc-id>                # pull the annotated result back
 ```
+
+`inkbridge doctor` is the quickest way to confirm the credentials work: it
+logs in and lists the root, exiting `0` when ready, `5` on a bad/expired
+credential, `6` when unconfigured or the cloud is unreachable.
 
 The three credentials may also live in a `./.env` file instead of the
 environment. Run `inkbridge <command> --help` for the full flag set on any

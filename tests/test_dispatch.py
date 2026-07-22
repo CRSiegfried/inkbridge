@@ -6,9 +6,12 @@ status join (Analysis 0011: base md5 anchor -> sibling .mark locator ->
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
+import httpx
 import pytest
+from click.testing import CliRunner
 from fake_cloud import FakeServer
 
 from inkbridge.dispatch import Ledger, acknowledge, check_entries, entry_for
@@ -145,3 +148,50 @@ def test_entry_without_manifest_never_pretends_cells(client: PCClient,
     assert not entry["manifest"]
     with pytest.raises(TypeError):
         Path(entry["manifest"])  # None is not a path — the CLI checks first
+
+
+def _server_from_env(monkeypatch, server: FakeServer):
+    def from_env(cls, env_file=None):
+        http = httpx.Client(transport=httpx.MockTransport(server.handler))
+        c = PCClient("http://cloud.test", http=http)
+        c.login("user@test", "pw")
+        return c
+    monkeypatch.setattr(PCClient, "from_env", classmethod(from_env))
+
+
+def _dispatch_cli(*args):
+    from inkbridge.cli import main
+    return CliRunner().invoke(main, ["dispatch", *args])
+
+
+def test_cli_dispatch_json_payload(server: FakeServer, monkeypatch, tmp_path: Path):
+    # doc_id (and remote/cells/ledger) come back as structured dispatch.v1
+    # fields, not scraped from a prose line.
+    _server_from_env(monkeypatch, server)
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    manifest = tmp_path / "form.manifest.json"
+    manifest.write_text(json.dumps(MANIFEST))
+    ledger = tmp_path / "ledger.json"
+    res = _dispatch_cli(str(f), "--manifest", str(manifest),
+                        "--ledger", str(ledger), "--json")
+    assert res.exit_code == 0
+    payload = json.loads(res.stdout)
+    assert payload["schema_version"] == "dispatch.v1"
+    assert payload["doc_id"] == "form-abc12345"
+    assert payload["remote"] == {"folder": "Document", "name": "form.pdf"}
+    assert payload["response_cells"] == 2 and payload["trigger_cells"] == 1
+    assert payload["manifest"] == str(manifest)
+    assert payload["ledger"] == str(ledger)
+
+
+def test_cli_dispatch_json_missing_folder_is_exit_4(server: FakeServer, monkeypatch,
+                                                    tmp_path: Path):
+    _server_from_env(monkeypatch, server)
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    res = _dispatch_cli(str(f), "--to", "Nonexistent",
+                        "--ledger", str(tmp_path / "ledger.json"), "--json")
+    assert res.exit_code == 4
+    assert res.stdout == ""
+    assert json.loads(res.stderr)["error"]["code"] == "not_found"

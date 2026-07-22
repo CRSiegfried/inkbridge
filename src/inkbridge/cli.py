@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 import click
@@ -23,17 +24,44 @@ def _split_remote(remote_path: str) -> tuple[str, str]:
     return folder, name
 
 
+@contextmanager
+def _cloud_errors(as_json: bool = False):
+    """Translate transport failures into the ADR-0002 exit taxonomy so a
+    cloud command emits a typed exit instead of a bare traceback: rejected or
+    expired credentials -> AUTH(5); the cloud being unreachable (DNS, connect,
+    timeout) -> PRECONDITION(6). Anything else propagates unchanged.
+
+    Wrap the network region of every command that logs in (``from_env``) or
+    calls the cloud; without it those failures escape as an uncaught exception
+    (exit 1 + traceback), which an agent cannot branch on.
+    """
+    import httpx
+
+    from inkbridge.contract import CliError, Exit
+    from inkbridge.transport.private_cloud import AuthError
+
+    try:
+        yield
+    except AuthError as e:
+        raise CliError(f"cloud authentication failed: {e}", code="auth",
+                       exit_status=Exit.AUTH, as_json=as_json) from e
+    except httpx.RequestError as e:
+        raise CliError(f"cloud is unreachable: {e}", code="unreachable",
+                       exit_status=Exit.PRECONDITION, as_json=as_json) from e
+
+
 @main.command()
 @click.argument("folder", required=False, default="")
 def ls(folder: str) -> None:
     """List a private-cloud folder (the root if omitted; nested paths ok)."""
     from inkbridge.transport.private_cloud import PCClient
 
-    client = PCClient.from_env()
-    try:
-        rows = client.ls(client.resolve_dir(folder)) if folder else client.ls()
-    except FileNotFoundError as e:
-        raise click.ClickException(str(e)) from e
+    with _cloud_errors():
+        client = PCClient.from_env()
+        try:
+            rows = client.ls(client.resolve_dir(folder)) if folder else client.ls()
+        except FileNotFoundError as e:
+            raise click.ClickException(str(e)) from e
     if not rows:
         click.echo("(empty)")
         return
@@ -54,10 +82,11 @@ def push(file: Path, remote_folder: str) -> None:
     """Push a document to the private cloud (synced to the device)."""
     from inkbridge.transport.private_cloud import PCClient
 
-    try:
-        info = PCClient.from_env().push(file, remote_folder)
-    except (FileNotFoundError, FileExistsError) as e:
-        raise click.ClickException(str(e)) from e
+    with _cloud_errors():
+        try:
+            info = PCClient.from_env().push(file, remote_folder)
+        except (FileNotFoundError, FileExistsError) as e:
+            raise click.ClickException(str(e)) from e
     click.echo(
         f"Pushed {file} -> {info['folder']}/{info['name']} "
         f"({info['size']} bytes, md5 {info['md5']}, verified in listing)"
@@ -72,10 +101,11 @@ def pull(remote_path: str, output: Path) -> None:
     from inkbridge.transport.private_cloud import PCClient
 
     folder, name = _split_remote(remote_path)
-    try:
-        info = PCClient.from_env().pull(folder, name, output)
-    except FileNotFoundError as e:  # covers MissingBytesError phantoms too
-        raise click.ClickException(str(e)) from e
+    with _cloud_errors():
+        try:
+            info = PCClient.from_env().pull(folder, name, output)
+        except FileNotFoundError as e:  # covers MissingBytesError phantoms too
+            raise click.ClickException(str(e)) from e
     match = "md5 verified" if info["match"] else (
         f"MD5 MISMATCH: listing {info['listing_md5']} != bytes {info['bytes_md5']}")
     click.echo(f"Pulled {remote_path} -> {output} ({info['size']} bytes, {match})")
@@ -98,11 +128,18 @@ def pull(remote_path: str, output: Path) -> None:
 @click.option("--scale", type=float, default=None,
               help="Exact density scale (1.0 = baseline; <1 packs tighter). "
                    "Overrides --density; for previewing arbitrary values.")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def compose(source: Path, output: Path | None, manifest_path: Path | None,
-            device: str, density: str, scale: float | None) -> None:
-    """Render markdown to a row-grid PDF + input-area manifest (Phase 2.5)."""
+            device: str, density: str, scale: float | None, as_json: bool) -> None:
+    """Render markdown to a row-grid PDF + input-area manifest (Phase 2.5).
+
+    Contract-compliant (ADR-0002): the --json result is a compose.v1 document
+    carrying the generated doc_id, output paths, and cell/page counts. Exit 1
+    on unrenderable source.
+    """
     from inkbridge.compose import DENSITIES
     from inkbridge.compose import compose as compose_markdown
+    from inkbridge.contract import CliError, Exit, emit_result
 
     output = output or source.with_suffix(".pdf")
     scale = scale if scale is not None else DENSITIES[density]
@@ -110,7 +147,19 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None,
         result = compose_markdown(source, output, manifest_path,
                                   device=device, scale=scale)
     except ValueError as e:
-        raise click.BadParameter(str(e)) from e
+        raise CliError(str(e), code="invalid_source", exit_status=Exit.ERROR,
+                       as_json=as_json) from e
+    if as_json:
+        emit_result({
+            "doc_id": result.doc_id,
+            "pdf": str(result.pdf_path),
+            "manifest": str(result.manifest_path),
+            "pages": result.pages,
+            "cells": len(result.cells),
+            "device": device,
+            "scale": scale,
+        }, "compose.v1")
+        return
     click.echo(
         f"Wrote {result.pdf_path} ({result.pages} page(s), {device}, scale {scale:g}) "
         f"and {result.manifest_path} ({len(result.cells)} cells, doc_id {result.doc_id})"
@@ -130,14 +179,15 @@ def rm(remote_paths: tuple[str, ...]) -> None:
     for rp in remote_paths:
         folder, name = _split_remote(rp)
         by_folder.setdefault(folder, []).append(name)
-    client = PCClient.from_env()
-    for folder, names in by_folder.items():
-        try:
-            deleted = client.delete(folder, names)
-        except FileNotFoundError as e:
-            raise click.ClickException(str(e)) from e
-        for name in deleted:
-            click.echo(f"Deleted {folder}/{name}")
+    with _cloud_errors():
+        client = PCClient.from_env()
+        for folder, names in by_folder.items():
+            try:
+                deleted = client.delete(folder, names)
+            except FileNotFoundError as e:
+                raise click.ClickException(str(e)) from e
+            for name in deleted:
+                click.echo(f"Deleted {folder}/{name}")
 
 
 _LEDGER_OPT = click.option(
@@ -154,14 +204,20 @@ _LEDGER_OPT = click.option(
               help="Compose manifest for FILE [default: FILE's sibling "
                    ".manifest.json, when present].")
 @_LEDGER_OPT
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
-             ledger_path: Path | None) -> None:
+             ledger_path: Path | None, as_json: bool) -> None:
     """Push FILE and record it in the dispatch ledger as awaiting a
     response — the .pdf.mark sidecar the device syncs back once inked.
     'inkbridge status' polls for it; 'inkbridge collect' reads it back.
+
+    Contract-compliant (ADR-0002): the --json result is a dispatch.v1 document
+    carrying the recorded doc_id, remote location, cell counts, and ledger
+    path. Exit 4 when the remote folder does not exist, 5 auth, 6 unreachable.
     """
     import json as jsonlib
 
+    from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger, entry_for
     from inkbridge.transport.private_cloud import PCClient
 
@@ -169,14 +225,29 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
         sibling = file.with_suffix(".manifest.json")
         manifest_path = sibling if sibling.exists() else None
     manifest = jsonlib.loads(manifest_path.read_text()) if manifest_path else None
-    try:
-        info = PCClient.from_env().push(file, remote_folder)
-    except (FileNotFoundError, FileExistsError) as e:
-        raise click.ClickException(str(e)) from e
+    with _cloud_errors(as_json):
+        try:
+            info = PCClient.from_env().push(file, remote_folder)
+        except FileNotFoundError as e:
+            raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+        except FileExistsError as e:
+            raise CliError(str(e), code="already_exists", exit_status=Exit.ERROR,
+                           as_json=as_json) from e
     ledger = Ledger(ledger_path)
     entry = entry_for(file, info, manifest, manifest_path)
     ledger.upsert(entry)
     ledger.save()
+    if as_json:
+        emit_result({
+            "doc_id": entry["doc_id"],
+            "remote": entry["remote"],
+            "manifest": entry["manifest"],
+            "response_cells": len(entry["response_cells"]),
+            "trigger_cells": len(entry["trigger_cells"]),
+            "ledger": str(ledger.path),
+        }, "dispatch.v1")
+        return
     detail = (
         f"{len(entry['response_cells'])} response cell(s), "
         f"{len(entry['trigger_cells'])} trigger(s)"
@@ -205,7 +276,8 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
     if not ledger.entries:
         click.echo(f"ledger {ledger.path} is empty — nothing dispatched yet")
         return
-    results = check_entries(ledger.entries, PCClient.from_env())
+    with _cloud_errors(as_json):
+        results = check_entries(ledger.entries, PCClient.from_env())
     if update:
         for r in results:
             if r["state"] in ("responded", "changed"):
@@ -266,11 +338,12 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     folder, name = entry["remote"]["folder"], entry["remote"]["name"]
     output_dir = Path(output_dir)
     dest = output_dir / (name + ".mark")
-    try:
-        info = PCClient.from_env().pull(folder, name + ".mark", dest)
-    except FileNotFoundError as e:
-        raise CliError(f"no response yet for {doc_id}: {e}", code="no_response",
-                       exit_status=Exit.NO_CHANGE, as_json=as_json) from e
+    with _cloud_errors(as_json):
+        try:
+            info = PCClient.from_env().pull(folder, name + ".mark", dest)
+        except FileNotFoundError as e:
+            raise CliError(f"no response yet for {doc_id}: {e}", code="no_response",
+                           exit_status=Exit.NO_CHANGE, as_json=as_json) from e
 
     manifest = jsonlib.loads(Path(entry["manifest"]).read_text())
     resolved = resolve_answers(read_mark(manifest, dest))
@@ -517,6 +590,44 @@ def merge(base: Path, addition: Path, output: Path, position: str) -> None:
     """
     result = merge_pdfs(base, addition, output, position=position)
     click.echo(f"Wrote {result}")
+
+
+@main.command()
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def doctor(as_json: bool) -> None:
+    """Check the integration is ready before dispatching: cloud configured,
+    reachable, and the credentials accepted (ADR-0002 doctor-class).
+
+    Unlike 'proof' (a device-free manifest/readback self-test that never
+    contacts the cloud), doctor is the cloud/auth/connectivity probe: it logs
+    in and lists the root — read-only, no device needed. Contract exits:
+    0 ready, 5 auth (credentials rejected or expired), 6 precondition
+    (missing INKBRIDGE_CLOUD_* config, or the cloud is unreachable). The
+    --json result is a doctor.v1 document listing each check.
+    """
+    from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.transport.private_cloud import PCClient
+
+    checks: list[dict] = []
+    with _cloud_errors(as_json):
+        try:
+            client = PCClient.from_env()
+        except KeyError as e:
+            raise CliError(f"missing cloud configuration: {e}", code="config_missing",
+                           exit_status=Exit.PRECONDITION, as_json=as_json) from e
+        checks.append({"name": "authentication", "ok": True,
+                       "detail": "credentials accepted"})
+        rows = client.ls()
+        checks.append({"name": "connectivity", "ok": True,
+                       "detail": f"root listing returned {len(rows)} item(s)"})
+
+    payload = {"ok": True, "url": client.api, "checks": checks}
+    if as_json:
+        emit_result(payload, "doctor.v1")
+        return
+    click.echo(f"doctor: OK — {client.api} reachable, credentials accepted")
+    for c in checks:
+        click.echo(f"  [pass] {c['name']}: {c['detail']}")
 
 
 if __name__ == "__main__":

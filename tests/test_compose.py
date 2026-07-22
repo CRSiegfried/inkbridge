@@ -354,3 +354,37 @@ def test_empty_document(tmp_path):
     res = compose("", tmp_path / "empty.pdf")
     assert res.pages == 1
     assert {c["type"] for c in res.cells} == {"capture_trigger"}
+
+
+def _compose_cli(*args):
+    from click.testing import CliRunner
+
+    from inkbridge.cli import main
+    return CliRunner().invoke(main, ["compose", *args])
+
+
+def test_cli_compose_json_payload(tmp_path):
+    # doc_id is a structured field of the compose.v1 result, not prose.
+    src = tmp_path / "f.md"
+    src.write_text("# Form\n\n- [ ] alpha\n- [x] beta\n")
+    res = _compose_cli(str(src), "-o", str(tmp_path / "f.pdf"), "--json")
+    assert res.exit_code == 0
+    payload = json.loads(res.stdout)
+    assert payload["schema_version"] == "compose.v1"
+    assert payload["doc_id"]
+    assert payload["pdf"].endswith("f.pdf")
+    assert payload["manifest"].endswith("f.manifest.json")
+    assert payload["cells"] >= 1 and payload["pages"] >= 1
+    assert payload["device"] == "manta"
+    # the structured doc_id matches what the written manifest carries
+    manifest = json.loads((tmp_path / "f.manifest.json").read_text())
+    assert manifest["doc_id"] == payload["doc_id"]
+
+
+def test_cli_compose_json_invalid_source_is_error(tmp_path):
+    src = tmp_path / "f.md"
+    src.write_text("- [ ] a\n")
+    res = _compose_cli(str(src), "-o", str(tmp_path / "f.pdf"), "--scale", "0", "--json")
+    assert res.exit_code == 1
+    assert res.stdout == ""  # --json keeps stdout pure; the error is on stderr
+    assert json.loads(res.stderr)["error"]["code"] == "invalid_source"

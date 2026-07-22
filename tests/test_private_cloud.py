@@ -11,6 +11,7 @@ import pytest
 from fake_cloud import DOC_DIR_ID, SUB_DIR_ID, TOKEN, FakeServer
 
 from inkbridge.transport.private_cloud import (
+    AuthError,
     MissingBytesError,
     PCClient,
     PrivateCloudError,
@@ -27,6 +28,22 @@ def test_login_digest_shape():
 
 def test_login_sets_token(client: PCClient):
     assert client.token == TOKEN
+
+
+def test_login_bad_password_raises_auth(server: FakeServer):
+    # A success:false from the login endpoint is an auth failure, typed so the
+    # CLI can map it to AUTH(5) — not a generic PrivateCloudError.
+    http = httpx.Client(transport=httpx.MockTransport(server.handler))
+    c = PCClient("http://cloud.test", http=http)
+    with pytest.raises(AuthError):
+        c.login("user@test", "wrong-password")
+
+
+def test_expired_token_raises_auth(client: PCClient):
+    # A 401 on an authenticated call (missing/expired token) -> AuthError.
+    client.token = "stale-token"
+    with pytest.raises(AuthError):
+        client.ls()
 
 
 def test_push_roundtrip(client: PCClient, server: FakeServer, tmp_path: Path):

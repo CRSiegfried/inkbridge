@@ -47,6 +47,14 @@ class PrivateCloudError(RuntimeError):
         self.error_msg = error_msg
 
 
+class AuthError(PrivateCloudError):
+    """Authentication/authorization failure: credentials rejected at login,
+    or a 401/403 on an authenticated call (a missing or expired token). A
+    typed subclass — like :class:`MissingBytesError` — so the CLI maps it to
+    the contract's AUTH(5) exit without inspecting error strings.
+    """
+
+
 class MissingBytesError(FileNotFoundError):
     """The listing has a row for the file but the bytes are not on disk
     server-side (E0321). Analysis 0013 F7: this is a benign phantom row —
@@ -103,27 +111,42 @@ class PCClient:
         if self.token:
             headers["x-access-token"] = self.token
         r = self.http.post(self.api + endpoint, json=payload, headers=headers)
-        r.raise_for_status()
+        try:
+            r.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (401, 403):
+                raise AuthError(endpoint, str(e.response.status_code),
+                                "not authorized (token missing or expired)") from e
+            raise
         data = r.json()
         if not data.get("success", False):
             raise PrivateCloudError(endpoint, data.get("errorCode"), data.get("errorMsg"))
         return data
 
     def login(self, email: str, password: str) -> None:
-        rc = self._call("/official/user/query/random/code", {"countryCode": 1, "account": email})
-        data = self._call(
-            "/official/user/account/login/new",
-            {
-                "countryCode": 1,
-                "account": email,
-                "password": login_password_digest(password, rc["randomCode"]),
-                "browser": "Chrome107",
-                "equipment": "1",
-                "loginMethod": "1",
-                "timestamp": rc["timestamp"],
-                "language": "en",
-            },
-        )
+        try:
+            rc = self._call("/official/user/query/random/code",
+                            {"countryCode": 1, "account": email})
+            data = self._call(
+                "/official/user/account/login/new",
+                {
+                    "countryCode": 1,
+                    "account": email,
+                    "password": login_password_digest(password, rc["randomCode"]),
+                    "browser": "Chrome107",
+                    "equipment": "1",
+                    "loginMethod": "1",
+                    "timestamp": rc["timestamp"],
+                    "language": "en",
+                },
+            )
+        except AuthError:
+            raise
+        except PrivateCloudError as e:
+            # A success:false from the random-code / login endpoints is an
+            # authentication failure (unknown account or wrong password) —
+            # surface it as the contract's AUTH class, not a generic error.
+            raise AuthError(e.endpoint, e.error_code, e.error_msg) from e
         self.token = data["token"]
 
     def ls(self, directory_id: int = 0) -> list[dict]:
