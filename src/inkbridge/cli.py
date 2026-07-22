@@ -120,6 +120,7 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None,
 @main.command()
 @click.argument("remote_paths", nargs=-1, required=True)
 @click.confirmation_option(
+    "-y", "--yes",
     prompt="Delete these files from the private cloud (and, on sync, the device)?")
 def rm(remote_paths: tuple[str, ...]) -> None:
     """Delete files from the private cloud (e.g. Document/f.pdf)."""

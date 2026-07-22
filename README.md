@@ -34,10 +34,12 @@ and adds the missing merge/chain logic and an agent-facing interface on top.
 Working against a real device today: `compose`, `dispatch`, `status`,
 `collect`, and `proof` form an end-to-end round-trip — render a Markdown
 document to a tickable PDF, send it to the tablet, detect which boxes were
-marked by hand, and read the answers back. `merge` (PDF chaining) works
-standalone. The official Supernote Cloud backend (`transport/cloud.py`) and
-`.note`-to-PDF conversion are still stubs; the private-cloud transport is the
-supported path.
+marked by hand, and read the answers back. `composite` reconstructs the
+combined page — decoded `.pdf.mark` ink overlaid on the rendered base page —
+into a single image host-side, the capture render handed to a VLM. `merge`
+(PDF chaining) works standalone. The official Supernote Cloud backend
+(`transport/cloud.py`) and `.note`-to-PDF conversion are still stubs; the
+private-cloud transport is the supported path.
 
 Contributions and Manta owners willing to test the device-facing commands are
 welcome.
@@ -59,6 +61,9 @@ inkbridge compose notes.md --output notes.pdf
 
 # Chain a PDF together with a notes page
 inkbridge merge base.pdf addition.pdf --output combined.pdf
+
+# Overlay pulled-back ink onto the base page — one image for a VLM to read
+inkbridge composite notes.pdf notes.pdf.mark -o capture.png
 ```
 
 The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`)
