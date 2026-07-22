@@ -1,0 +1,144 @@
+{
+  "doc_id": "sampler-form-41eaabdf",
+  "mark_file": "deploy/local/captures/sampler_form.pdf.mark",
+  "pages": [
+    {
+      "page": 1,
+      "ink_hash": "5f44072138cd2fd0cfe01b0d27be81eb7b8fc13813e931bcbe31d4ae2ed57c3b",
+      "cells": [
+        {
+          "id": "checkbox.milk",
+          "type": "checkbox",
+          "label": "milk",
+          "coverage": 0.013234375,
+          "decision": "answered"
+        },
+        {
+          "id": "checkbox.eggs",
+          "type": "checkbox",
+          "label": "eggs",
+          "coverage": 0.006328125,
+          "decision": "answered"
+        },
+        {
+          "id": "checkbox.coffee",
+          "type": "checkbox",
+          "label": "coffee",
+          "coverage": 0.012296875,
+          "decision": "answered"
+        },
+        {
+          "id": "checkbox.a-checkbox-with-a-much-l",
+          "type": "checkbox",
+          "label": "a checkbox with a much longer label to see how truncation behaves on the device screen",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "choice.next-store-run.heb",
+          "type": "choice",
+          "label": "next store run: HEB",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "choice.next-store-run.kroger",
+          "type": "choice",
+          "label": "next store run: Kroger",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "choice.next-store-run.costco",
+          "type": "choice",
+          "label": "next store run: Costco",
+          "coverage": 0.01184,
+          "decision": "answered"
+        },
+        {
+          "id": "choice.next-store-run.skip-this-week",
+          "type": "choice",
+          "label": "next store run: skip this week",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "cmd.capture.p1",
+          "type": "capture_trigger",
+          "label": "capture page 1",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "cmd.done.p1",
+          "type": "command",
+          "label": "done",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "cmd.remind.p1",
+          "type": "command",
+          "label": "remind",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "cmd.archive.p1",
+          "type": "command",
+          "label": "archive",
+          "coverage": 0.0,
+          "decision": "blank"
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "ink_hash": "fa38dc9b515a79406c67467963d98c6c3bf2675a6f1a8e320cbc37c74493850e",
+      "cells": [
+        {
+          "id": "capture.sketch-or-notes",
+          "type": "capture",
+          "label": "sketch or notes",
+          "coverage": 0.008048716605552645,
+          "decision": "answered"
+        },
+        {
+          "id": "ack.reviewed-this-sampler",
+          "type": "ack",
+          "label": "reviewed this sampler",
+          "coverage": 0.01440625,
+          "decision": "answered"
+        },
+        {
+          "id": "cmd.capture.p2",
+          "type": "capture_trigger",
+          "label": "capture page 2",
+          "coverage": 0.04220920138888889,
+          "decision": "answered"
+        },
+        {
+          "id": "cmd.done.p2",
+          "type": "command",
+          "label": "done",
+          "coverage": 0.05186631944444445,
+          "decision": "answered"
+        },
+        {
+          "id": "cmd.remind.p2",
+          "type": "command",
+          "label": "remind",
+          "coverage": 0.0,
+          "decision": "blank"
+        },
+        {
+          "id": "cmd.archive.p2",
+          "type": "command",
+          "label": "archive",
+          "coverage": 0.0,
+          "decision": "blank"
+        }
+      ]
+    }
+  ]
+}

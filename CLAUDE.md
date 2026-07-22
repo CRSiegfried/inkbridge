@@ -5,6 +5,8 @@
 Everything tracked here must be publishable. Anything machine-specific
 (credentials, deployment instances, captured device data) goes in
 `deploy/local/` — gitignored, never committed.
+Exception (ADR-0005): sanitized, no-credential, synthetic-content device
+captures MAY be tracked under `tests/fixtures/` solely as test inputs.
 
 ## Documentation
 

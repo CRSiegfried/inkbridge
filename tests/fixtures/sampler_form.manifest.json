@@ -1,0 +1,242 @@
+{
+  "doc_id": "sampler-form-41eaabdf",
+  "compose_version": "0.1.0",
+  "canvas": {
+    "width": 1920,
+    "height": 2560
+  },
+  "page_size_pt": [
+    480.0,
+    640.0
+  ],
+  "pages": 2,
+  "source_md5": "41eaabdf228818e659a9e61e03a83873",
+  "trigger_slots": {
+    "x0": 160,
+    "pitch": 96,
+    "box": 64,
+    "capacity": 12
+  },
+  "cells": [
+    {
+      "id": "checkbox.milk",
+      "page": 1,
+      "type": "checkbox",
+      "label": "milk",
+      "bbox_norm": [
+        0.067708,
+        0.375,
+        0.208333,
+        0.0625
+      ]
+    },
+    {
+      "id": "checkbox.eggs",
+      "page": 1,
+      "type": "checkbox",
+      "label": "eggs",
+      "bbox_norm": [
+        0.067708,
+        0.4375,
+        0.208333,
+        0.0625
+      ]
+    },
+    {
+      "id": "checkbox.coffee",
+      "page": 1,
+      "type": "checkbox",
+      "label": "coffee",
+      "bbox_norm": [
+        0.067708,
+        0.5,
+        0.208333,
+        0.0625
+      ]
+    },
+    {
+      "id": "checkbox.a-checkbox-with-a-much-l",
+      "page": 1,
+      "type": "checkbox",
+      "label": "a checkbox with a much longer label to see how truncation behaves on the device screen",
+      "bbox_norm": [
+        0.067708,
+        0.5625,
+        0.208333,
+        0.0625
+      ]
+    },
+    {
+      "id": "choice.next-store-run.heb",
+      "page": 1,
+      "type": "choice",
+      "label": "next store run: HEB",
+      "bbox_norm": [
+        0.072917,
+        0.783203,
+        0.195312,
+        0.058594
+      ]
+    },
+    {
+      "id": "choice.next-store-run.kroger",
+      "page": 1,
+      "type": "choice",
+      "label": "next store run: Kroger",
+      "bbox_norm": [
+        0.289062,
+        0.783203,
+        0.195312,
+        0.058594
+      ]
+    },
+    {
+      "id": "choice.next-store-run.costco",
+      "page": 1,
+      "type": "choice",
+      "label": "next store run: Costco",
+      "bbox_norm": [
+        0.505208,
+        0.783203,
+        0.195312,
+        0.058594
+      ]
+    },
+    {
+      "id": "choice.next-store-run.skip-this-week",
+      "page": 1,
+      "type": "choice",
+      "label": "next store run: skip this week",
+      "bbox_norm": [
+        0.721354,
+        0.783203,
+        0.195312,
+        0.058594
+      ]
+    },
+    {
+      "id": "cmd.capture.p1",
+      "page": 1,
+      "type": "capture_trigger",
+      "label": "capture page 1",
+      "bbox_norm": [
+        0.075,
+        0.925,
+        0.05,
+        0.0375
+      ],
+      "slot": 0,
+      "fiducial_unique": true
+    },
+    {
+      "id": "cmd.done.p1",
+      "page": 1,
+      "type": "command",
+      "label": "done",
+      "bbox_norm": [
+        0.720833,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    },
+    {
+      "id": "cmd.remind.p1",
+      "page": 1,
+      "type": "command",
+      "label": "remind",
+      "bbox_norm": [
+        0.804167,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    },
+    {
+      "id": "cmd.archive.p1",
+      "page": 1,
+      "type": "command",
+      "label": "archive",
+      "bbox_norm": [
+        0.8875,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    },
+    {
+      "id": "capture.sketch-or-notes",
+      "page": 2,
+      "type": "capture",
+      "label": "sketch or notes",
+      "bbox_norm": [
+        0.067708,
+        0.1875,
+        0.864583,
+        0.179688
+      ]
+    },
+    {
+      "id": "ack.reviewed-this-sampler",
+      "page": 2,
+      "type": "ack",
+      "label": "reviewed this sampler",
+      "bbox_norm": [
+        0.067708,
+        0.5,
+        0.208333,
+        0.0625
+      ]
+    },
+    {
+      "id": "cmd.capture.p2",
+      "page": 2,
+      "type": "capture_trigger",
+      "label": "capture page 2",
+      "bbox_norm": [
+        0.125,
+        0.925,
+        0.05,
+        0.0375
+      ],
+      "slot": 1,
+      "fiducial_unique": true
+    },
+    {
+      "id": "cmd.done.p2",
+      "page": 2,
+      "type": "command",
+      "label": "done",
+      "bbox_norm": [
+        0.720833,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    },
+    {
+      "id": "cmd.remind.p2",
+      "page": 2,
+      "type": "command",
+      "label": "remind",
+      "bbox_norm": [
+        0.804167,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    },
+    {
+      "id": "cmd.archive.p2",
+      "page": 2,
+      "type": "command",
+      "label": "archive",
+      "bbox_norm": [
+        0.8875,
+        0.925,
+        0.05,
+        0.0375
+      ]
+    }
+  ]
+}
