@@ -1,12 +1,18 @@
-"""Readback decision + ink-hash-store tests over synthetic decoded pages.
+"""Readback decision + ink-hash-store tests.
 
-No real .mark decode here: read_pages() is pure over {page: gray array},
-so cells are painted directly onto 2560x1920 arrays. Decode-dependent
-behavior (supernotelib) is covered by the calibration fixtures in
-Analysis 0009, not unit tests.
+Most tests run over synthetic decoded pages: read_pages() is pure over
+{page: gray array}, so cells are painted directly onto 2560x1920 arrays.
+The two `..._mark_...` tests at the bottom exercise the *real* supernotelib
+decode path (`read_mark` → `decode_page_gray`) against a tracked device
+capture in `tests/fixtures/` (a `.pdf.mark`, admitted under ADR-0005) — the
+coverage that the painted-array tests structurally cannot reach.
 """
 
 from __future__ import annotations
+
+import copy
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -16,12 +22,16 @@ from inkbridge.readback import (
     ANSWERED_LINE,
     Decision,
     InkHashStore,
+    SparseMarkError,
     decide,
     ink_hash,
+    read_mark,
     read_pages,
 )
 
 H, W = 2560, 1920
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def blank_page() -> np.ndarray:
@@ -147,3 +157,75 @@ def test_extremes(fill, expected):
         {"id": "a", "page": 1, "type": "checkbox", "bbox_norm": CELL_A}]}
     (reading,) = read_pages(manifest, {1: p})
     assert reading.cells[0].decision is expected
+
+
+# --- Real device-capture decode (C2/C1), tracked fixture under ADR-0005 ---
+
+def _load_fixture():
+    manifest = json.loads((FIXTURES / "sampler_form.manifest.json").read_text())
+    expected = json.loads((FIXTURES / "sampler_form.readback.json").read_text())
+    mark = FIXTURES / "sampler_form.pdf.mark"
+    return manifest, mark, expected
+
+
+def test_real_mark_decode_matches_expected_readback():
+    """C2: the real supernotelib decode of a tracked device `.pdf.mark`
+    reproduces the recorded per-cell coverage and three-way decision. This
+    is the regression gate on `decode_page_gray`, the supernotelib boundary,
+    and the 1-/0-indexed page mapping — none of which the synthetic-array
+    tests above can touch.
+    """
+    manifest, mark, expected = _load_fixture()
+
+    readings = read_mark(manifest, mark)
+    got = {
+        (pr.page, c.id): (c.coverage, c.decision.value)
+        for pr in readings for c in pr.cells
+    }
+
+    expected_cells = [
+        (p["page"], c["id"], c["coverage"], c["decision"])
+        for p in expected["pages"] for c in p["cells"]
+    ]
+    # the fixture is a genuine answered form, not all-blank
+    assert any(d == "answered" for *_, d in expected_cells)
+    assert len(got) == len(expected_cells)
+
+    for page, cid, cov, decision in expected_cells:
+        assert (page, cid) in got, f"missing cell {cid} on page {page}"
+        got_cov, got_decision = got[(page, cid)]
+        assert got_cov == pytest.approx(cov, abs=1e-6), f"{cid} coverage"
+        assert got_decision == decision, f"{cid} decision"
+
+
+def test_real_mark_decode_maps_page_two_correctly():
+    """C1 (positive branch): page-2 ink reads back as page 2, not
+    misattributed. A manifest referencing only page-2 cells decodes the
+    second mark page and yields that page's real, nonzero answers.
+    """
+    manifest, mark, expected = _load_fixture()
+    p2_only = {**manifest,
+               "cells": [c for c in manifest["cells"] if c["page"] == 2]}
+
+    (reading,) = read_mark(p2_only, mark)
+    assert reading.page == 2
+    got = {c.id: (c.coverage, c.decision.value) for c in reading.cells}
+    for c in next(p["cells"] for p in expected["pages"] if p["page"] == 2):
+        assert got[c["id"]][0] == pytest.approx(c["coverage"], abs=1e-6)
+        assert got[c["id"]][1] == c["decision"]
+
+
+def test_sparse_mark_page_identity_refuses_typed():
+    """C1: a manifest page absent from the (sparse) mark is refused with a
+    typed SparseMarkError, never silently misattributed. The fixture mark
+    has 2 pages; a manifest that also references a page 3 must raise before
+    returning any reading.
+    """
+    manifest, mark, _ = _load_fixture()
+    phantom = copy.deepcopy(next(c for c in manifest["cells"] if c["page"] == 2))
+    phantom["id"] = "phantom.page3"
+    phantom["page"] = 3
+    sparse_manifest = {**manifest, "cells": manifest["cells"] + [phantom]}
+
+    with pytest.raises(SparseMarkError):
+        read_mark(sparse_manifest, mark)

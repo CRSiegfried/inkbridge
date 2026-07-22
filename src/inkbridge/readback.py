@@ -40,6 +40,19 @@ AMBIGUOUS_FLOOR = 0.001
 ANSWERED_LINE = 0.004
 
 
+class SparseMarkError(Exception):
+    """A manifest page is absent from the ``.pdf.mark``.
+
+    The mark is sparse — only annotated pages materialize, with no page
+    index (0009 F7) — so a page the device left blank cannot be located and
+    the positional mapping would misattribute later pages' ink. Refusing is
+    the safe outcome (ADR-0004). This *types* the failure ``decode_page_gray``
+    already surfaces as a bare ``IndexError``; it is not a structural
+    page-count guard on valid dense reads (which ADR-0004 declined) — a dense
+    mark decodes unchanged.
+    """
+
+
 class Decision(str, Enum):
     BLANK = "blank"
     AMBIGUOUS = "ambiguous"
@@ -146,13 +159,27 @@ def read_mark(
     indistinguishable by count. This decode therefore assumes a **dense**
     mark: every manifest page was annotated, so mark-page k lines up with
     compose-page k. Sparse multi-page marks (a page left entirely blank) are
-    an open problem — see ADR-0004; ``decode_page_gray`` will raise
-    IndexError for a manifest page absent from the mark.
+    an open problem — see ADR-0004. When a manifest page is absent from the
+    mark this refuses with :class:`SparseMarkError` rather than misattribute:
+    the decode is eager over every manifest page, so a compose-generated
+    manifest (which references *every* page via its command strip) can never
+    return a reading before hitting the missing page. Correcting the mapping —
+    not just detecting the gap — still needs positional page identity we don't
+    have (ADR-0004); this only makes the failure loud and typed.
     """
     if isinstance(manifest, Path):
         manifest = json.loads(manifest.read_text())
     pages = sorted({c["page"] for c in manifest["cells"]})
-    grays = {p: decode_page_gray(mark_path, p) for p in pages}
+    grays = {}
+    for p in pages:
+        try:
+            grays[p] = decode_page_gray(mark_path, p)
+        except IndexError as e:
+            raise SparseMarkError(
+                f"manifest references page {p} but it is absent from "
+                f"{Path(mark_path).name} — a sparse mark (blank/missing page) "
+                f"can't be read positionally without misattributing ink (ADR-0004)"
+            ) from e
     return read_pages(
         manifest, grays,
         ink_gray_cutoff=ink_gray_cutoff,
