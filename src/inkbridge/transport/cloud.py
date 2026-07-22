@@ -1,6 +1,6 @@
 """Supernote Cloud transport backend, built on `sncloud`.
 
-Phase 1/2 work (see docs/roadmap.md). Not yet implemented against a real
+Phase 1/2 work on the roadmap. Not yet implemented against a real
 account.
 """
 

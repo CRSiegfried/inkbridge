@@ -34,8 +34,8 @@ class ComposeResult:
 # the calibrated 1.0 baseline; the tighter variants shrink every content
 # design constant (fonts, rows, glyph boxes) uniformly. "dense" (0.72) is the
 # device-validated default for dispatch — its shrunk tickable boxes were
-# confirmed comfortable for a pen mark on the Manta (2026-07-21, calibration
-# forms in deploy/local/density-preview). The CLI defaults to it.
+# confirmed comfortable for a pen mark on the Manta (2026-07-21). The CLI
+# defaults to it.
 DENSITIES = {"normal": 1.0, "compact": 0.85, "dense": 0.72}
 
 

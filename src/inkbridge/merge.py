@@ -1,9 +1,9 @@
 """PDF <-> notes chaining — the feature Supernote's own software lacks.
 
-Phase 3 (see docs/roadmap.md). The PDF-merge half is real and usable today;
+Phase 3 on the roadmap. The PDF-merge half is real and usable today;
 .note inputs go through convert.notebook.note_to_pdf first, which is still a
-Phase 1 stub. See docs/architecture.md#open-design-questions for why this
-goes through a PDF intermediate rather than writing to .note directly.
+Phase 1 stub. Merges go through a PDF intermediate rather than writing to
+.note directly.
 """
 
 from __future__ import annotations

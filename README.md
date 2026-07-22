@@ -15,19 +15,10 @@ the agent to read (OCR/VLM transcription, diagrams, math, the works).
 The Supernote community has already built solid pieces of this — a `.note`
 parser, unofficial Cloud API clients, even an MCP server for LLM access to
 notes. Nobody has wired them into one coherent push/pull/merge control plane,
-and nobody has solved PDF+notes merging. See
-[`docs/ecosystem.md`](docs/ecosystem.md) for the full survey of prior art and
-what `inkbridge` builds on vs. what it adds.
-
-## Architecture
-
-`inkbridge` is an orchestration layer, not a from-scratch reimplementation.
-It wraps existing libraries for parsing and transport, and adds the missing
-merge/chain logic and an agent-facing interface on top. See
-[`docs/architecture.md`](docs/architecture.md) for the full design,
-[`docs/note-format.md`](docs/note-format.md) for what's actually known about
-the `.note` format and why, and [`docs/roadmap.md`](docs/roadmap.md) for
-build phases.
+and nobody has solved PDF+notes merging. `inkbridge` is an orchestration layer,
+not a from-scratch reimplementation: it wraps existing libraries for parsing
+and transport (chiefly [`supernotelib`](https://github.com/jya-dev/supernote-tool))
+and adds the missing merge/chain logic and an agent-facing interface on top.
 
 ```
             ┌─────────────┐
@@ -40,9 +31,16 @@ build phases.
 
 ## Status
 
-Early scaffold — see [`docs/roadmap.md`](docs/roadmap.md). Not yet functional
-against a real device. Contributions and Manta owners willing to test the
-device-facing commands are welcome.
+Working against a real device today: `compose`, `dispatch`, `status`,
+`collect`, and `proof` form an end-to-end round-trip — render a Markdown
+document to a tickable PDF, send it to the tablet, detect which boxes were
+marked by hand, and read the answers back. `merge` (PDF chaining) works
+standalone. The official Supernote Cloud backend (`transport/cloud.py`) and
+`.note`-to-PDF conversion are still stubs; the private-cloud transport is the
+supported path.
+
+Contributions and Manta owners willing to test the device-facing commands are
+welcome.
 
 ## Install (dev)
 
@@ -51,9 +49,39 @@ pip install -e ".[dev]"
 inkbridge --help
 ```
 
+## Using it
+
+The local-only commands need nothing but the package:
+
+```bash
+# Render Markdown to a tickable PDF (dense layout is the device-validated default)
+inkbridge compose notes.md --output notes.pdf
+
+# Chain a PDF together with a notes page
+inkbridge merge base.pdf addition.pdf --output combined.pdf
+```
+
+The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`)
+talk to a Supernote private-cloud deployment and read credentials from the
+environment:
+
+```bash
+export INKBRIDGE_CLOUD_URL="https://your-private-cloud.example.com"
+export INKBRIDGE_CLOUD_EMAIL="you@example.com"
+export INKBRIDGE_CLOUD_PASSWORD="…"
+
+inkbridge compose notes.md -o notes.pdf   # emits notes.pdf + notes.manifest.json
+inkbridge dispatch notes.pdf              # push, recording it in the ledger
+inkbridge status                          # which dispatched docs have new marks
+inkbridge collect <doc-id>                # pull the annotated result back
+```
+
+The three credentials may also live in a `./.env` file instead of the
+environment. Run `inkbridge <command> --help` for the full flag set on any
+command.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Note that one adjacent tool in the ecosystem
 (`sn2md`) is AGPL-3.0; `inkbridge` only ever shells out to it as an external
-CLI, never imports it as a library, to keep this project's license clean. See
-[`docs/ecosystem.md`](docs/ecosystem.md#licensing-notes).
+CLI, never imports it as a library, to keep this project's license clean.

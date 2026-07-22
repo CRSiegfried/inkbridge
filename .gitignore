@@ -8,6 +8,10 @@ venv/
 dist/
 build/
 .DS_Store
+uv.lock
+
+# Local-only Claude Code agents (govern the gitignored deploy/local/ tree)
+.claude/agents/docs-maintainer.md
 
 # Device credentials / local captures — never commit these
 *.env

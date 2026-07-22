@@ -41,4 +41,4 @@ def targeted_read(page, bbox):
 ![architecture diagram](diagram.png)
 
 Closing paragraph with a long URL to test character breaking:
-https://sn.siegpkm.com/some/very/long/path/that/cannot/word-wrap/0123456789
+https://example.com/some/very/long/path/that/cannot/word-wrap/0123456789
