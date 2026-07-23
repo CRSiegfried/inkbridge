@@ -18,19 +18,31 @@ from inkbridge.transport.base import AuthError, DirHandle, MissingBytesError, Tr
 __all__ = ["AuthError", "DirHandle", "MissingBytesError", "Transport", "connect"]
 
 
-def connect() -> Transport:
-    """Return a connected transport for the configured backend.
+def connect(profile: str | None = None) -> Transport:
+    """Return a connected transport for the selected profile (G6).
 
-    Zero-arg (the ops layer's connector shape), invoked lazily by ``ops`` / the CLI
-    so a precondition failure never authenticates. ``PCClient.from_env`` is
-    resolved at **call time** — not captured at import — so a test that
-    monkeypatches ``from_env`` is honored and credentials read lazily; a missing
-    ``INKBRIDGE_CLOUD_*`` config surfaces as the ``KeyError`` ``doctor`` maps to
-    PRECONDITION.
+    The profile is the explicit ``profile`` argument, else the
+    ``$INKBRIDGE_PROFILE`` environment default; a named profile's credentials
+    come from ``~/.config/inkbridge/config.toml`` (ADR-0010). With no profile,
+    the unnamed single-account ``PCClient.from_env`` path (env vars / ``.env``)
+    is used unchanged — so the bare ``transport.connect`` the ops layer/CLI pass
+    around keeps working, and ``from_env`` is one source among several.
 
-    One backend today (the private cloud); config-driven selection across named
-    profiles is deferred to G6 — a single selectable value needs no registry.
+    Stays effectively zero-arg for the ops connector shape and resolves
+    credentials at **call time**, not import — so a monkeypatched ``from_env``
+    is honored and a missing config surfaces as the ``KeyError`` ``doctor`` maps
+    to PRECONDITION.
     """
     from inkbridge.transport.private_cloud import PCClient
 
+    from inkbridge.config import active_profile_name
+
+    name = profile or active_profile_name()
+    if name:
+        from inkbridge.config import get_profile
+
+        p = get_profile(name)
+        client = PCClient(p.url)
+        client.login(p.email, p.password)
+        return client
     return PCClient.from_env()

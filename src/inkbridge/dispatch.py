@@ -49,13 +49,20 @@ def _state_dir() -> Path:
 
 
 def default_ledger_path() -> Path:
-    """The ledger path when none is passed: ``$INKBRIDGE_LEDGER`` verbatim if
-    set (the explicit override — may be relative), else a cwd-independent path
-    in the per-user state dir. The default is resolved absolute so two runs
-    from different directories address the same ledger."""
+    """The ledger path when none is passed. Precedence: the explicit
+    ``$INKBRIDGE_LEDGER`` override (may be relative); else the active named
+    profile's per-profile ledger when ``$INKBRIDGE_PROFILE`` is set (G6), so
+    credentials and ledger move together under one name; else a cwd-independent
+    path in the per-user state dir. Resolved so two runs from different
+    directories address the same ledger."""
     override = os.environ.get("INKBRIDGE_LEDGER")
     if override:
         return Path(override)
+    from inkbridge.config import active_profile_name, get_profile
+
+    name = active_profile_name()
+    if name:
+        return get_profile(name).ledger
     return _state_dir() / LEDGER_NAME
 
 
