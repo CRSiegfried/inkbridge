@@ -70,17 +70,23 @@ def _cloud_errors(as_json: bool = False):
                        exit_status=Exit.PRECONDITION, as_json=as_json) from e
 
 
-def _read_mark(manifest_data, mark_file: Path, *, as_json: bool = False):
-    """``read_mark`` with a sparse-mark refusal translated into the ADR-0002
-    exit taxonomy: a manifest page absent from the pulled mark (a sparse
-    mark — blank/missing page — that can't be read positionally, ADR-0004)
-    becomes a typed PRECONDITION(6), not an uncaught traceback an agent can't
-    branch on."""
+@contextmanager
+def _mark_errors(as_json: bool = False):
+    """Translate a sparse-mark refusal into the ADR-0002 exit taxonomy: a
+    manifest page absent from the pulled mark (a sparse mark — blank/missing
+    page — that can't be read positionally, ADR-0004) becomes a typed
+    PRECONDITION(6), not an uncaught traceback an agent can't branch on.
+
+    Wrap the region that decodes a ``.pdf.mark`` — ``read_mark`` directly
+    (``readback``/``answers``) or via ``ops.collect``. This is the CLI-side
+    home of the ``SparseMarkError`` mapping that ADR-0006 moved out of the
+    shared read path so ``ops`` stays free of ``CliError``.
+    """
     from inkbridge.contract import CliError, Exit
-    from inkbridge.readback import SparseMarkError, read_mark
+    from inkbridge.readback import SparseMarkError
 
     try:
-        return read_mark(manifest_data, mark_file)
+        yield
     except SparseMarkError as e:
         raise CliError(str(e), code="sparse_mark", exit_status=Exit.PRECONDITION,
                        as_json=as_json) from e
@@ -251,46 +257,36 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     carrying the recorded doc_id, remote location, cell counts, and ledger
     path. Exit 4 when the remote folder does not exist, 5 auth, 6 unreachable.
     """
-    import json as jsonlib
-
+    from inkbridge import ops
     from inkbridge.contract import CliError, Exit, emit_result
-    from inkbridge.dispatch import Ledger, entry_for
+    from inkbridge.dispatch import Ledger
     from inkbridge.transport.private_cloud import PCClient
 
     if manifest_path is None:
         sibling = file.with_suffix(".manifest.json")
         manifest_path = sibling if sibling.exists() else None
-    manifest = jsonlib.loads(manifest_path.read_text()) if manifest_path else None
+    ledger = Ledger(ledger_path)
     with _cloud_errors(as_json):
         try:
-            info = PCClient.from_env().push(file, remote_folder)
+            payload = ops.dispatch(PCClient.from_env, ledger, file,
+                                   remote_folder=remote_folder,
+                                   manifest_path=manifest_path)
         except FileNotFoundError as e:
             raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
                            as_json=as_json) from e
         except FileExistsError as e:
             raise CliError(str(e), code="already_exists", exit_status=Exit.ERROR,
                            as_json=as_json) from e
-    ledger = Ledger(ledger_path)
-    entry = entry_for(file, info, manifest, manifest_path)
-    ledger.upsert(entry)
-    ledger.save()
     if as_json:
-        emit_result({
-            "doc_id": entry["doc_id"],
-            "remote": entry["remote"],
-            "manifest": entry["manifest"],
-            "response_cells": len(entry["response_cells"]),
-            "trigger_cells": len(entry["trigger_cells"]),
-            "ledger": str(ledger.path),
-        }, "dispatch.v1")
+        emit_result(payload, "dispatch.v1")
         return
     detail = (
-        f"{len(entry['response_cells'])} response cell(s), "
-        f"{len(entry['trigger_cells'])} trigger(s)"
-        if manifest else "no manifest — arrival tracking only")
+        f"{payload['response_cells']} response cell(s), "
+        f"{payload['trigger_cells']} trigger(s)"
+        if payload["manifest"] else "no manifest — arrival tracking only")
     click.echo(
-        f"Dispatched {file} -> {info['folder']}/{info['name']} "
-        f"(doc_id {entry['doc_id']}, {detail}); ledger: {ledger.path}")
+        f"Dispatched {file} -> {payload['remote']['folder']}/{payload['remote']['name']} "
+        f"(doc_id {payload['doc_id']}, {detail}); ledger: {payload['ledger']}")
 
 
 @main.command()
@@ -305,7 +301,8 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
     """
     import json as jsonlib
 
-    from inkbridge.dispatch import Ledger, acknowledge, check_entries
+    from inkbridge import ops
+    from inkbridge.dispatch import Ledger
     from inkbridge.transport.private_cloud import PCClient
 
     ledger = Ledger(ledger_path)
@@ -313,18 +310,11 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
         click.echo(f"ledger {ledger.path} is empty — nothing dispatched yet")
         return
     with _cloud_errors(as_json):
-        results = check_entries(ledger.entries, PCClient.from_env())
-    if update:
-        for r in results:
-            if r["state"] in ("responded", "changed"):
-                acknowledge(r["entry"], r["mark_md5"])
-        ledger.save()
+        rows = ops.status(PCClient.from_env, ledger, acknowledge=update)
     if as_json:
-        click.echo(jsonlib.dumps([
-            {k: r[k] for k in ("doc_id", "remote", "state", "mark_md5", "base_changed")}
-            for r in results], indent=2))
+        click.echo(jsonlib.dumps(rows, indent=2))
         return
-    for r in results:
+    for r in rows:
         state = r["state"].upper() if r["state"] in ("responded", "changed") else r["state"]
         if update and state in ("RESPONDED", "CHANGED"):
             state += " (acknowledged)"
@@ -353,53 +343,35 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     unknown doc_id, 6 when the doc was dispatched without a manifest or the
     pulled mark is sparse (a blank page can't be read positionally, ADR-0004).
     """
-    import json as jsonlib
-
-    from inkbridge.answers import ANSWERS_SCHEMA, answers_payload, resolve_answers
+    from inkbridge import ops
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
     from inkbridge.transport.private_cloud import PCClient
 
     ledger = Ledger(ledger_path)
-    entry = ledger.find(doc_id)
-    if entry is None:
-        raise CliError(f"no ledger entry for doc_id {doc_id!r} in {ledger.path}",
-                       code="unknown_doc", exit_status=Exit.NOT_FOUND, as_json=as_json)
-    if not entry["manifest"]:
-        raise CliError(
-            f"{doc_id} was dispatched without a manifest — nothing to resolve the "
-            "ink against; pull the .mark directly with 'inkbridge pull'",
-            code="no_manifest", exit_status=Exit.PRECONDITION, as_json=as_json)
-
-    folder, name = entry["remote"]["folder"], entry["remote"]["name"]
-    output_dir = Path(output_dir)
-    dest = output_dir / (name + ".mark")
-    with _cloud_errors(as_json):
-        try:
-            info = PCClient.from_env().pull(folder, name + ".mark", dest)
-        except FileNotFoundError as e:
-            raise CliError(f"no response yet for {doc_id}: {e}", code="no_response",
-                           exit_status=Exit.NO_CHANGE, as_json=as_json) from e
-
-    manifest = jsonlib.loads(Path(entry["manifest"]).read_text())
-    resolved = resolve_answers(_read_mark(manifest, dest, as_json=as_json))
-    # Provenance = the listing md5, the same ink signal 'status' reports, so a
-    # consumer diffs sidecar.mark_md5 against status to detect staleness.
-    payload = answers_payload(doc_id, dest, resolved, mark_md5=info["listing_md5"])
-
-    sidecar = output_dir / f"{doc_id}.answers.json"
-    sidecar.parent.mkdir(parents=True, exist_ok=True)
-    sidecar.write_text(
-        jsonlib.dumps({"schema_version": ANSWERS_SCHEMA, **payload}, indent=2) + "\n")
+    try:
+        with _cloud_errors(as_json), _mark_errors(as_json):
+            payload = ops.collect(PCClient.from_env, ledger, doc_id,
+                                  output_dir=Path(output_dir))
+    except ops.UnknownDocError as e:
+        raise CliError(str(e), code="unknown_doc", exit_status=Exit.NOT_FOUND,
+                       as_json=as_json) from e
+    except ops.NoManifestError as e:
+        raise CliError(str(e), code="no_manifest", exit_status=Exit.PRECONDITION,
+                       as_json=as_json) from e
+    except ops.NoResponseError as e:
+        raise CliError(str(e), code="no_response", exit_status=Exit.NO_CHANGE,
+                       as_json=as_json) from e
 
     if as_json:
-        emit_result({**payload, "answers_file": str(sidecar)}, "collect.v1")
+        emit_result(payload, "collect.v1")
         return
-    click.echo(f"doc:     {doc_id}\nmark:    {dest} (md5 {info['listing_md5']})")
-    click.echo(f"answers: {sidecar}\n")
+    click.echo(f"doc:     {payload['doc_id']}\n"
+               f"mark:    {payload['mark_file']} (md5 {payload['mark_md5']})")
+    click.echo(f"answers: {payload['answers_file']}\n")
     click.echo(f"{'question':32} {'type':10} {'status':13} answer")
-    for a in resolved:
-        click.echo(f"{a.id:32} {a.type:10} {a.status.value:13} {_answer_text(a)}")
+    for a in payload["answers"]:
+        click.echo(f"{a['id']:32} {a['type']:10} {a['status']:13} {_answer_line(a)}")
 
 
 @main.command()
@@ -419,11 +391,12 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
     """
     import json as jsonlib
 
-    from inkbridge.readback import InkHashStore
+    from inkbridge.readback import InkHashStore, read_mark
 
     manifest_data = jsonlib.loads(manifest.read_text())
     doc_id = manifest_data["doc_id"]
-    pages = _read_mark(manifest_data, mark_file, as_json=as_json)
+    with _mark_errors(as_json):
+        pages = read_mark(manifest_data, mark_file)
 
     store = InkHashStore(hash_store_path) if hash_store_path else None
     changed: dict[int, bool] = {}
@@ -481,6 +454,7 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
 
     from inkbridge.answers import ANSWERS_SCHEMA, answers_payload, resolve_answers
     from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.readback import read_mark
 
     for kind, path in (("manifest", manifest), ("mark file", mark_file)):
         if not path.exists():
@@ -494,7 +468,8 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
                        code="invalid_manifest", exit_status=Exit.ERROR,
                        as_json=as_json) from e
     doc_id = manifest_data.get("doc_id")
-    resolved = resolve_answers(_read_mark(manifest_data, mark_file, as_json=as_json))
+    with _mark_errors(as_json):
+        resolved = resolve_answers(read_mark(manifest_data, mark_file))
 
     if as_json:
         emit_result(answers_payload(doc_id, mark_file, resolved), ANSWERS_SCHEMA)
@@ -507,6 +482,26 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
     click.echo(f"{'question':32} {'type':10} {'status':13} answer")
     for a in resolved:
         click.echo(f"{a.id:32} {a.type:10} {a.status.value:13} {_answer_text(a)}")
+
+
+def _answer_line(a: dict) -> str:
+    """One-column rendering of a resolved answer in its ``answers.v1`` dict
+    shape — the dict-shaped twin of :func:`_answer_text`, used by ``collect``
+    which renders from the ``ops.collect`` payload rather than live ``Answer``
+    objects. Kept byte-for-byte in step with ``_answer_text``."""
+    status = a["status"]
+    if status == "needs_review":
+        return f"-> composite {', '.join(a.get('cells') or [])}"
+    if status == "conflict":
+        return f"conflict: {', '.join(a.get('value') or [])}"
+    if status == "unanswered":
+        return "-"
+    # answered
+    if a["type"] in ("checkbox", "ack"):
+        return "yes" if a["value"] else "no"
+    if a["value"] is None:  # presence-only comb/capture
+        return "(present — composite to read)"
+    return str(a["value"])
 
 
 def _answer_text(a) -> str:
