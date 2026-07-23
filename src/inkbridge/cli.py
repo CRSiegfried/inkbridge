@@ -95,20 +95,39 @@ def _mark_errors(as_json: bool = False):
 
 @main.command()
 @click.argument("folder", required=False, default="")
-def ls(folder: str) -> None:
-    """List a private-cloud folder (the root if omitted; nested paths ok)."""
-    from inkbridge import transport
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def ls(folder: str, as_json: bool) -> None:
+    """List a private-cloud folder (the root if omitted; nested paths ok).
 
-    with _cloud_errors():
+    Contract (ADR-0002): the --json result is an ls.v1 document with the folder
+    and its entries. Exit 4 if the folder does not exist, 5 auth, 6 unreachable.
+    """
+    from inkbridge import transport
+    from inkbridge.contract import CliError, Exit, emit_result
+
+    with _cloud_errors(as_json):
         client = transport.connect()
         try:
             rows = client.ls(client.resolve_dir(folder)) if folder else client.ls()
         except FileNotFoundError as e:
-            raise click.ClickException(str(e)) from e
+            raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+    ordered = sorted(rows, key=lambda r: (r["isFolder"] != "Y", r["fileName"].lower()))
+    if as_json:
+        emit_result({
+            "folder": folder,
+            "entries": [{
+                "name": r["fileName"],
+                "is_folder": r["isFolder"] == "Y",
+                "size": r["size"],
+                "md5": r.get("md5", ""),
+            } for r in ordered],
+        }, "ls.v1")
+        return
     if not rows:
         click.echo("(empty)")
         return
-    for r in sorted(rows, key=lambda r: (r["isFolder"] != "Y", r["fileName"].lower())):
+    for r in ordered:
         if r["isFolder"] == "Y":
             click.echo(f"{'<dir>':>10}  {'':32}  {r['fileName']}/")
         else:
@@ -121,15 +140,35 @@ def ls(folder: str) -> None:
               help="Destination folder on the private cloud (device files go in "
                    "Document; nested paths like Document/Projects ok — the folder "
                    "must already exist).")
-def push(file: Path, remote_folder: str) -> None:
-    """Push a document to the private cloud (synced to the device)."""
-    from inkbridge import transport
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def push(file: Path, remote_folder: str, as_json: bool) -> None:
+    """Push a document to the private cloud (synced to the device).
 
-    with _cloud_errors():
+    Contract (ADR-0002): the --json result is a push.v1 document with the remote
+    location, size, and md5. Exit 4 if the folder is missing, 1 if the name is
+    already taken (no overwrite), 5 auth, 6 unreachable.
+    """
+    from inkbridge import transport
+    from inkbridge.contract import CliError, Exit, emit_result
+
+    with _cloud_errors(as_json):
         try:
             info = transport.connect().push(file, remote_folder)
-        except (FileNotFoundError, FileExistsError) as e:
-            raise click.ClickException(str(e)) from e
+        except FileNotFoundError as e:
+            raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+        except FileExistsError as e:
+            raise CliError(str(e), code="already_exists", exit_status=Exit.ERROR,
+                           as_json=as_json) from e
+    if as_json:
+        emit_result({
+            "source": str(file),
+            "folder": info["folder"],
+            "name": info["name"],
+            "size": info["size"],
+            "md5": info["md5"],
+        }, "push.v1")
+        return
     click.echo(
         f"Pushed {file} -> {info['folder']}/{info['name']} "
         f"({info['size']} bytes, md5 {info['md5']}, verified in listing)"
@@ -139,16 +178,34 @@ def push(file: Path, remote_folder: str) -> None:
 @main.command()
 @click.argument("remote_path")
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)
-def pull(remote_path: str, output: Path) -> None:
-    """Pull a file back from the private cloud (e.g. Document/f.pdf.mark)."""
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def pull(remote_path: str, output: Path, as_json: bool) -> None:
+    """Pull a file back from the private cloud (e.g. Document/f.pdf.mark).
+
+    Contract (ADR-0002): the --json result is a pull.v1 document with the output
+    path, size, and md5-match. Exit 4 if the remote file is absent, 5 auth,
+    6 unreachable.
+    """
     from inkbridge import transport
+    from inkbridge.contract import CliError, Exit, emit_result
 
     folder, name = _split_remote(remote_path)
-    with _cloud_errors():
+    with _cloud_errors(as_json):
         try:
             info = transport.connect().pull(folder, name, output)
         except FileNotFoundError as e:  # covers MissingBytesError phantoms too
-            raise click.ClickException(str(e)) from e
+            raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+    if as_json:
+        emit_result({
+            "remote": remote_path,
+            "output": str(output),
+            "size": info["size"],
+            "listing_md5": info["listing_md5"],
+            "bytes_md5": info["bytes_md5"],
+            "match": info["match"],
+        }, "pull.v1")
+        return
     match = "md5 verified" if info["match"] else (
         f"MD5 MISMATCH: listing {info['listing_md5']} != bytes {info['bytes_md5']}")
     click.echo(f"Pulled {remote_path} -> {output} ({info['size']} bytes, {match})")
@@ -328,21 +385,26 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
 def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
     """Poll the private cloud for responses to dispatched documents:
     waiting / RESPONDED / CHANGED / seen / missing per ledger entry.
-    """
-    import json as jsonlib
 
-    from inkbridge import ops
+    Contract (ADR-0002): the --json result is a status.v1 document carrying the
+    ledger path and one row per entry (through the schema_version envelope, not
+    a bare list). Exit 5 auth, 6 unreachable.
+    """
+    from inkbridge import ops, transport
+    from inkbridge.contract import emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge import transport
 
     ledger = Ledger(ledger_path)
     if not ledger.entries:
+        if as_json:
+            emit_result({"ledger": str(ledger.path), "entries": []}, "status.v1")
+            return
         click.echo(f"ledger {ledger.path} is empty — nothing dispatched yet")
         return
     with _cloud_errors(as_json):
         rows = ops.status(transport.connect, ledger, acknowledge=update)
     if as_json:
-        click.echo(jsonlib.dumps(rows, indent=2))
+        emit_result({"ledger": str(ledger.path), "entries": rows}, "status.v1")
         return
     for r in rows:
         state = r["state"].upper() if r["state"] in ("responded", "changed") else r["state"]
@@ -421,6 +483,7 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
     """
     import json as jsonlib
 
+    from inkbridge.contract import emit_result
     from inkbridge.readback import InkHashStore, read_mark
 
     manifest_data = jsonlib.loads(manifest.read_text())
@@ -437,7 +500,7 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
                 store.update(doc_id, p.page, p.ink_hash)
 
     if as_json:
-        click.echo(jsonlib.dumps({
+        emit_result({
             "doc_id": doc_id,
             "mark_file": str(mark_file),
             "pages": [{
@@ -449,7 +512,7 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
                     "coverage": c.coverage, "decision": c.decision.value,
                 } for c in p.cells],
             } for p in pages],
-        }, indent=2))
+        }, "readback.v1")
         return
 
     click.echo(f"doc:  {doc_id}\nmark: {mark_file}\n")
@@ -561,14 +624,20 @@ def _answer_text(a) -> str:
               help="Crop to this manifest cell id (requires --manifest).")
 @click.option("--manifest", "manifest_path",
               type=click.Path(exists=True, path_type=Path), default=None)
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
-              cell_id: str | None, manifest_path: Path | None) -> None:
+              cell_id: str | None, manifest_path: Path | None,
+              as_json: bool) -> None:
     """Overlay decoded .pdf.mark ink onto the rendered base PDF page —
     the capture render sent to a VLM (0012 F5). Never a coverage target.
+
+    Contract (ADR-0002): the --json result is a composite.v1 document with the
+    output path and pixel dimensions. Exit 4 when --cell names no such cell.
     """
     import json as jsonlib
 
     from inkbridge.composite import composite_page, composite_region
+    from inkbridge.contract import CliError, Exit, emit_result
 
     if cell_id:
         if not manifest_path:
@@ -576,13 +645,21 @@ def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
         cells = jsonlib.loads(manifest_path.read_text())["cells"]
         match = next((c for c in cells if c["id"] == cell_id), None)
         if match is None:
-            raise click.ClickException(f"no cell {cell_id!r} in {manifest_path}")
+            raise CliError(f"no cell {cell_id!r} in {manifest_path}", code="not_found",
+                           exit_status=Exit.NOT_FOUND, as_json=as_json)
         img = composite_region(
             base_pdf, mark_file, match["page"], tuple(match["bbox_norm"]))
     else:
         img = composite_page(base_pdf, mark_file, page)
     output.parent.mkdir(parents=True, exist_ok=True)
     img.save(output)
+    if as_json:
+        emit_result({
+            "output": str(output),
+            "width": img.size[0],
+            "height": img.size[1],
+        }, "composite.v1")
+        return
     click.echo(f"Wrote {output} ({img.size[0]}x{img.size[1]})")
 
 
@@ -643,12 +720,25 @@ def proof(ctx: click.Context, manifest: Path, as_json: bool) -> None:
     default="append",
     help="Whether addition's pages go after or before base's.",
 )
-def merge(base: Path, addition: Path, output: Path, position: str) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def merge(base: Path, addition: Path, output: Path, position: str,
+          as_json: bool) -> None:
     """Merge a PDF and/or .note file into one PDF.
 
-    BASE and ADDITION may each be a .pdf or a .note file.
+    BASE and ADDITION may each be a .pdf or a .note file. Contract (ADR-0002):
+    the --json result is a merge.v1 document with the output path. Exit 1 on
+    an unmergeable input.
     """
-    result = merge_pdfs(base, addition, output, position=position)
+    from inkbridge.contract import CliError, Exit, emit_result
+
+    try:
+        result = merge_pdfs(base, addition, output, position=position)
+    except ValueError as e:
+        raise CliError(str(e), code="invalid_input", exit_status=Exit.ERROR,
+                       as_json=as_json) from e
+    if as_json:
+        emit_result({"output": str(result)}, "merge.v1")
+        return
     click.echo(f"Wrote {result}")
 
 
