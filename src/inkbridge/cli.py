@@ -810,16 +810,21 @@ def proof(ctx: click.Context, manifest: Path, as_json: bool) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def merge(base: Path, addition: Path, output: Path, position: str,
           as_json: bool) -> None:
-    """Merge a PDF and/or .note file into one PDF.
+    """Merge two PDF documents into one.
 
-    BASE and ADDITION may each be a .pdf or a .note file. Contract (ADR-0002):
-    the --json result is a merge.v1 document with the output path. Exit 1 on
-    an unmergeable input.
+    BASE and ADDITION are PDFs. Contract (ADR-0002): the --json result is a
+    merge.v1 document with the output path. Exit 1 on an unmergeable input —
+    a `.note` input (not yet supported) is a typed `unsupported_input` error,
+    never an uncaught NotImplementedError (D2).
     """
     from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.merge import UnsupportedInputError
 
     try:
         result = merge_pdfs(base, addition, output, position=position)
+    except UnsupportedInputError as e:
+        raise CliError(str(e), code="unsupported_input", exit_status=Exit.ERROR,
+                       as_json=as_json) from e
     except ValueError as e:
         raise CliError(str(e), code="invalid_input", exit_status=Exit.ERROR,
                        as_json=as_json) from e
