@@ -6,12 +6,32 @@ from pathlib import Path
 import click
 
 from inkbridge.merge import merge_pdfs
+from inkbridge.obs import configure_logging, get_logger
 
 
 @click.group()
 @click.version_option()
-def main() -> None:
+@click.option(
+    "-v", "--verbose", count=True,
+    help="Log per-invocation activity to stderr (repeat for DEBUG). Do NOT combine "
+         "with a machine consumer parsing the --json stderr envelope; use --log-file "
+         "for inspectable subprocess runs instead.")
+@click.option(
+    "--log-file", "log_file", envvar="INKBRIDGE_LOG",
+    type=click.Path(path_type=Path), default=None,
+    help="Also append per-invocation logs to this file (or set INKBRIDGE_LOG). File "
+         "logging never touches stdout/stderr, so it is safe under --json.")
+@click.pass_context
+def main(ctx: click.Context, verbose: int, log_file: Path | None) -> None:
     """inkbridge: push documents to a Supernote Manta, pull annotations back."""
+    configure_logging(verbose, log_file)
+    # Log the subcommand being dispatched. (Click consumes the subcommand's own
+    # arguments before this callback runs, and sys.argv would be the *embedding*
+    # process's argv when inkbridge is driven in-process; ctx.invoked_subcommand
+    # is the one faithful signal here. Specific argument values — remote paths,
+    # doc_ids, cloud endpoint — surface in the transport-layer and exit-reason
+    # logs below.)
+    get_logger().info("invoke: inkbridge %s", ctx.invoked_subcommand or "")
 
 
 def _split_remote(remote_path: str) -> tuple[str, str]:
@@ -48,6 +68,22 @@ def _cloud_errors(as_json: bool = False):
     except httpx.RequestError as e:
         raise CliError(f"cloud is unreachable: {e}", code="unreachable",
                        exit_status=Exit.PRECONDITION, as_json=as_json) from e
+
+
+def _read_mark(manifest_data, mark_file: Path, *, as_json: bool = False):
+    """``read_mark`` with a sparse-mark refusal translated into the ADR-0002
+    exit taxonomy: a manifest page absent from the pulled mark (a sparse
+    mark — blank/missing page — that can't be read positionally, ADR-0004)
+    becomes a typed PRECONDITION(6), not an uncaught traceback an agent can't
+    branch on."""
+    from inkbridge.contract import CliError, Exit
+    from inkbridge.readback import SparseMarkError, read_mark
+
+    try:
+        return read_mark(manifest_data, mark_file)
+    except SparseMarkError as e:
+        raise CliError(str(e), code="sparse_mark", exit_status=Exit.PRECONDITION,
+                       as_json=as_json) from e
 
 
 @main.command()
@@ -314,14 +350,14 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     reacting is left to the agent loop / an external watcher diffing the
     sidecar's mark_md5 against 'inkbridge status'. Contract-compliant
     (ADR-0002): exit 3 (no change) when there's no response yet, 4 for an
-    unknown doc_id, 6 when the doc was dispatched without a manifest.
+    unknown doc_id, 6 when the doc was dispatched without a manifest or the
+    pulled mark is sparse (a blank page can't be read positionally, ADR-0004).
     """
     import json as jsonlib
 
     from inkbridge.answers import ANSWERS_SCHEMA, answers_payload, resolve_answers
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge.readback import read_mark
     from inkbridge.transport.private_cloud import PCClient
 
     ledger = Ledger(ledger_path)
@@ -346,7 +382,7 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
                            exit_status=Exit.NO_CHANGE, as_json=as_json) from e
 
     manifest = jsonlib.loads(Path(entry["manifest"]).read_text())
-    resolved = resolve_answers(read_mark(manifest, dest))
+    resolved = resolve_answers(_read_mark(manifest, dest, as_json=as_json))
     # Provenance = the listing md5, the same ink signal 'status' reports, so a
     # consumer diffs sidecar.mark_md5 against status to detect staleness.
     payload = answers_payload(doc_id, dest, resolved, mark_md5=info["listing_md5"])
@@ -383,11 +419,11 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
     """
     import json as jsonlib
 
-    from inkbridge.readback import InkHashStore, read_mark
+    from inkbridge.readback import InkHashStore
 
     manifest_data = jsonlib.loads(manifest.read_text())
     doc_id = manifest_data["doc_id"]
-    pages = read_mark(manifest_data, mark_file)
+    pages = _read_mark(manifest_data, mark_file, as_json=as_json)
 
     store = InkHashStore(hash_store_path) if hash_store_path else None
     changed: dict[int, bool] = {}
@@ -445,7 +481,6 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
 
     from inkbridge.answers import ANSWERS_SCHEMA, answers_payload, resolve_answers
     from inkbridge.contract import CliError, Exit, emit_result
-    from inkbridge.readback import read_mark
 
     for kind, path in (("manifest", manifest), ("mark file", mark_file)):
         if not path.exists():
@@ -459,7 +494,7 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
                        code="invalid_manifest", exit_status=Exit.ERROR,
                        as_json=as_json) from e
     doc_id = manifest_data.get("doc_id")
-    resolved = resolve_answers(read_mark(manifest_data, mark_file))
+    resolved = resolve_answers(_read_mark(manifest_data, mark_file, as_json=as_json))
 
     if as_json:
         emit_result(answers_payload(doc_id, mark_file, resolved), ANSWERS_SCHEMA)

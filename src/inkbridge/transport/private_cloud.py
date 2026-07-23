@@ -29,12 +29,17 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from pathlib import Path
 from urllib.parse import urlencode
 
 import httpx
 
+from inkbridge.obs import get_logger
+
 ENV_VARS = ("INKBRIDGE_CLOUD_URL", "INKBRIDGE_CLOUD_EMAIL", "INKBRIDGE_CLOUD_PASSWORD")
+
+_log = get_logger("cloud")
 
 
 class PrivateCloudError(RuntimeError):
@@ -110,7 +115,12 @@ class PCClient:
         headers = {"Content-Type": "application/json"}
         if self.token:
             headers["x-access-token"] = self.token
+        start = time.monotonic()
         r = self.http.post(self.api + endpoint, json=payload, headers=headers)
+        _log.debug(
+            "POST %s -> %d (%.0fms)", endpoint, r.status_code,
+            (time.monotonic() - start) * 1000,
+        )
         try:
             r.raise_for_status()
         except httpx.HTTPStatusError as e:
@@ -148,6 +158,7 @@ class PCClient:
             # surface it as the contract's AUTH class, not a generic error.
             raise AuthError(e.endpoint, e.error_code, e.error_msg) from e
         self.token = data["token"]
+        _log.info("logged in to %s", self.api)
 
     def ls(self, directory_id: int = 0) -> list[dict]:
         data = self._call(

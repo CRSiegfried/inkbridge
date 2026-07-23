@@ -80,6 +80,14 @@ class CliError(click.ClickException):
         self.details = details or {}
 
     def show(self, file=None) -> None:  # noqa: ARG002 - click passes a file arg
+        # Exit reason, for the opt-in log (silent by default; see inkbridge.obs).
+        # This does NOT alter the stderr envelope below — it only reaches a
+        # handler when -v/--log-file is set.
+        from inkbridge.obs import get_logger
+
+        get_logger().warning(
+            "exit %d %s: %s", self.exit_code, self.code, self.format_message()
+        )
         if self.as_json:
             error = {"code": self.code, "message": self.format_message()}
             if self.details:

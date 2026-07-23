@@ -207,6 +207,25 @@ def test_cli_malformed_manifest_is_contract_error_not_traceback(tmp_path):
     assert err["error"]["code"] == "invalid_manifest"
 
 
+def test_cli_sparse_mark_is_precondition_not_traceback(form, monkeypatch):
+    # ADR-0004: a sparse mark (a manifest page absent from the .mark) is a
+    # typed PRECONDITION(6) contract error, never an uncaught traceback.
+    manifest, mark = form
+    from inkbridge.readback import SparseMarkError
+
+    def _raise(manifest, mark_path, **kw):
+        raise SparseMarkError("manifest references page 3 but it is absent")
+
+    monkeypatch.setattr("inkbridge.readback.read_mark", _raise)
+    from inkbridge.cli import main
+
+    res = CliRunner().invoke(main, ["answers", str(manifest), str(mark), "--json"])
+    assert res.exit_code == 6
+    assert res.stdout == "" and "Traceback" not in res.stderr
+    err = json.loads(res.stderr)
+    assert err["error"]["code"] == "sparse_mark"
+
+
 def test_cli_missing_mark_human_error_on_stderr(form):
     manifest, _ = form
     from inkbridge.cli import main
