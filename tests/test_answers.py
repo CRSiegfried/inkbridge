@@ -18,9 +18,9 @@ from inkbridge.answers import Status, resolve_answers
 from inkbridge.readback import CellReading, Decision, PageReading
 
 
-def cell(id_, type_, decision, label=None, page=1, coverage=0.0):
+def cell(id_, type_, decision, label=None, page=1, coverage=0.0, group=None):
     return CellReading(id=id_, type=type_, label=label, page=page,
-                       coverage=coverage, decision=decision)
+                       coverage=coverage, decision=decision, group=group)
 
 
 def page(cells, page_no=1, ink_hash="h"):
@@ -126,8 +126,8 @@ def test_order_and_multipage_grouping_preserved():
 
 
 def test_same_label_different_page_are_distinct_groups():
-    # grouping is (page, question): the same question label on two pages must
-    # not collapse into one answer.
+    # Group-less fallback: grouping is (page, question), so the same question
+    # label on two pages must not collapse into one answer.
     resolved = resolve_answers([
         page(_choice_cells({"eggs": A, "oats": B}), page_no=1),
         page([cell("choice.meal.eggs", "choice", B, label="meal: eggs", page=2),
@@ -135,6 +135,38 @@ def test_same_label_different_page_are_distinct_groups():
              page_no=2),
     ])
     assert [(a.page, a.value) for a in resolved] == [(1, "eggs"), (2, "oats")]
+
+
+def test_choice_straddling_page_break_is_one_group():
+    # G4: a choice whose options straddle a page break carries ONE explicit
+    # group id across both pages, so it resolves to a single answer with a
+    # single unique id — not a split-vote pair sharing a duplicate id.
+    resolved = resolve_answers([
+        page([cell("choice.store.heb", "choice", B, label="store: heb",
+                   page=1, group="choice.store")], page_no=1),
+        page([cell("choice.store.kroger", "choice", A, label="store: kroger",
+                   page=2, group="choice.store"),
+              cell("choice.store.costco", "choice", B, label="store: costco",
+                   page=2, group="choice.store")], page_no=2),
+    ])
+    assert len(resolved) == 1                       # one group, not two
+    (a,) = resolved
+    assert a.id == "choice.store"                   # the explicit group id
+    assert a.status is Status.ANSWERED and a.value == "kroger"
+    assert a.cells == ["choice.store.kroger"]
+
+
+def test_same_label_distinct_groups_do_not_collide():
+    # G4: two questions sharing a label but carrying DIFFERENT explicit group
+    # ids resolve to two answers with distinct ids (never merged by label).
+    resolved = resolve_answers([page([
+        cell("choice.size.s", "choice", A, label="size: s", group="choice.size"),
+        cell("choice.size.l", "choice", B, label="size: l", group="choice.size"),
+        cell("choice.size.s2", "choice", B, label="size: s", group="choice.size.2"),
+        cell("choice.size.l2", "choice", A, label="size: l", group="choice.size.2"),
+    ])])
+    assert [(a.id, a.value) for a in resolved] == [
+        ("choice.size", "s"), ("choice.size.2", "l")]
 
 
 # -- CLI contract (ADR-0002) ----------------------------------------------

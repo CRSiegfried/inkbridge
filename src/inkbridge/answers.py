@@ -31,12 +31,14 @@ Per-type resolution (finding 1):
 
 Learned scope for later commands:
 
-- The manifest carries no explicit question-group id, so choice options are
-  grouped by ``(page, question-label)`` recovered from the cell label
-  (``"<question>: <option>"``). Two genuinely distinct choice questions with
-  the *same* label on the *same* page would merge. Giving compose an explicit
-  per-question ``group`` id would fix this cleanly and is exactly the
-  de-collision key manifest-aware ``merge`` (finding 4) will also want.
+- Choice options are grouped by the manifest's explicit per-question ``group``
+  id (G4) — page-independent, so a choice whose options straddle a page break
+  resolves to one group, and two distinct questions sharing a label never
+  merge. The cell label (``"<question>: <option>"``) is still parsed for the
+  resolved *option value*, but never for grouping/identity. A manifest that
+  predates the ``group`` field falls back to the old ``(page, question-label)``
+  key (which could merge same-label same-page questions); compose stamps a
+  ``group`` on every choice cell, so current output never hits that path.
 - There is no multi-select directive today, so "multi-choice → set"
   (finding 1) has nothing to resolve yet; a multi-select choice would surface
   here as ``conflict``. Revisit if/when a multi-select directive lands.
@@ -104,9 +106,11 @@ class Answer:
         return d
 
 
-def _resolve_choice(label: str, page: int, options: list[tuple[str, CellReading]]) -> Answer:
-    """Single-select resolution over a question's option cells."""
-    group_id = f"choice.{_slug(label)}"
+def _resolve_choice(group_id: str, label: str, page: int,
+                    options: list[tuple[str, CellReading]]) -> Answer:
+    """Single-select resolution over a question's option cells. ``group_id`` is
+    the answer's stable id — the manifest-borne ``group`` (G4) when present, else
+    the ``choice.<question-slug>`` fallback derived by the caller."""
     answered = [(opt, c) for opt, c in options if c.decision is Decision.ANSWERED]
     ambiguous = [(opt, c) for opt, c in options if c.decision is Decision.AMBIGUOUS]
 
@@ -150,8 +154,10 @@ def resolve_answers(pages: list[PageReading]) -> list[Answer]:
     here, exactly as ``read_pages`` is the pure core under ``read_mark``.
     """
     answers: list[Answer] = []
-    # Order-preserving registry of choice groups: key -> resolved slot index.
-    choice_groups: dict[tuple[int, str], list[tuple[str, CellReading]]] = {}
+    # Order-preserving registry of choice groups: grouping key -> option cells.
+    choice_groups: dict[object, list[tuple[str, CellReading]]] = {}
+    # key -> (answer_id, question label, first page) for rendering the Answer.
+    group_info: dict[object, tuple[str, str, int]] = {}
     plan: list[tuple[str, object]] = []  # ("choice", key) | ("single", cell)
 
     for page in pages:
@@ -159,14 +165,24 @@ def resolve_answers(pages: list[PageReading]) -> list[Answer]:
             if cell.type == "capture_trigger":
                 continue
             if cell.type == "choice":
-                # Cell label is "<question>: <option>"; all options of one
-                # question share the "<question>: " prefix (partition on the
-                # first ": "). Group by (page, question) — see module docstring
-                # on the same-label collision limit.
+                # Cell label is "<question>: <option>": the option is the suffix
+                # after the first ": " (used only for the resolved *value*).
                 question, _, option = (cell.label or "").partition(": ")
-                key = (page.page, question)
+                if cell.group:
+                    # G4: the manifest's explicit per-question group id is the
+                    # grouping key AND the answer id — page-independent, so a
+                    # choice straddling a page break is one group, and two
+                    # questions sharing a label never collide.
+                    key: object = cell.group
+                    answer_id = cell.group
+                else:
+                    # Fallback for manifests without a group: the historical
+                    # (page, parsed-question) key and choice.<slug> id.
+                    key = (page.page, question)
+                    answer_id = f"choice.{_slug(question)}"
                 if key not in choice_groups:
                     choice_groups[key] = []
+                    group_info[key] = (answer_id, question, page.page)
                     plan.append(("choice", key))
                 choice_groups[key].append((option, cell))
             else:
@@ -174,8 +190,8 @@ def resolve_answers(pages: list[PageReading]) -> list[Answer]:
 
     for kind, ref in plan:
         if kind == "choice":
-            page_no, question = ref  # type: ignore[misc]
-            answers.append(_resolve_choice(question, page_no, choice_groups[ref]))
+            answer_id, label, page_no = group_info[ref]
+            answers.append(_resolve_choice(answer_id, label, page_no, choice_groups[ref]))
         else:
             answers.append(_resolve_single(ref))  # type: ignore[arg-type]
     return answers

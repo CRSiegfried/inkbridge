@@ -82,6 +82,10 @@ class CellReading:
     page: int
     coverage: float
     decision: Decision
+    # Explicit per-question group id from the manifest (G4). Choice options
+    # sharing a group are one question even across a page break; None on
+    # single-cell types and on manifests that predate the field.
+    group: str | None = None
 
 
 @dataclass
@@ -129,6 +133,7 @@ def read_pages(
                     gray, tuple(c["bbox_norm"]), ink_gray_cutoff=ink_gray_cutoff)),
                 decision=decide(
                     cov, ambiguous_floor=ambiguous_floor, answered_line=answered_line),
+                group=c.get("group"),
             )
             for c in by_page.get(page, [])
         ]

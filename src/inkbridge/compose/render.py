@@ -213,6 +213,7 @@ class Renderer:
         self.px = Px(self.c, profile)
         self.cells: list[dict] = []
         self._ids: set[str] = set()
+        self._groups: set[str] = set()
         self.page = 0
         self.row = 0
         self.prev = None
@@ -427,6 +428,16 @@ class Renderer:
 
     def _choice(self, b: Choice) -> None:
         g = self.g
+        # One explicit group id for the whole question (G4), stamped onto every
+        # option cell so readback groups on it — not on a parsed label — even
+        # when the options straddle a page break below. De-duplicated so two
+        # questions sharing a label get distinct groups.
+        group = base = f"choice.{_slug(b.label)}"
+        n = 2
+        while group in self._groups:
+            group = f"{base}.{n}"
+            n += 1
+        self._groups.add(group)
         # Column count follows the widest option (box + gaps + label + pad),
         # so long options get fewer, wider slots instead of ellipses.
         widest = max(width_px(o, BODY, self.u(13.0)) for o in b.options)
@@ -458,6 +469,7 @@ class Renderer:
                     self.glyph_box + 2 * self.glyph_pad,
                     self.glyph_box + 2 * self.glyph_pad,
                     id_=f"choice.{_slug(b.label)}.{_slug(opt)}",
+                    group=group,
                 )
             self.row += 2
 
