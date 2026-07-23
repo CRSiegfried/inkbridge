@@ -36,6 +36,7 @@ from urllib.parse import urlencode
 import httpx
 
 from inkbridge.obs import get_logger
+from inkbridge.transport import base
 
 ENV_VARS = ("INKBRIDGE_CLOUD_URL", "INKBRIDGE_CLOUD_EMAIL", "INKBRIDGE_CLOUD_PASSWORD")
 
@@ -52,20 +53,24 @@ class PrivateCloudError(RuntimeError):
         self.error_msg = error_msg
 
 
-class AuthError(PrivateCloudError):
+class AuthError(PrivateCloudError, base.AuthError):
     """Authentication/authorization failure: credentials rejected at login,
     or a 401/403 on an authenticated call (a missing or expired token). A
     typed subclass — like :class:`MissingBytesError` — so the CLI maps it to
-    the contract's AUTH(5) exit without inspecting error strings.
+    the contract's AUTH(5) exit without inspecting error strings. Also a
+    :class:`inkbridge.transport.base.AuthError` (ADR-0007) so ``_cloud_errors``
+    can catch the transport-neutral type; the 3-arg ``PrivateCloudError``
+    constructor and message are unchanged (it wins the MRO).
     """
 
 
-class MissingBytesError(FileNotFoundError):
+class MissingBytesError(base.MissingBytesError):
     """The listing has a row for the file but the bytes are not on disk
     server-side (E0321). Analysis 0013 F7: this is a benign phantom row —
     ``upload/finish`` trusts the client, and login-triggered reconciliation
     purges such rows later. Pollers should treat this as "not there yet",
-    not as corruption.
+    not as corruption. Still a ``FileNotFoundError`` via the neutral base
+    (ADR-0007).
     """
 
 

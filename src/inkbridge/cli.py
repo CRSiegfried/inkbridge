@@ -58,7 +58,7 @@ def _cloud_errors(as_json: bool = False):
     import httpx
 
     from inkbridge.contract import CliError, Exit
-    from inkbridge.transport.private_cloud import AuthError
+    from inkbridge.transport import AuthError
 
     try:
         yield
@@ -96,10 +96,10 @@ def _mark_errors(as_json: bool = False):
 @click.argument("folder", required=False, default="")
 def ls(folder: str) -> None:
     """List a private-cloud folder (the root if omitted; nested paths ok)."""
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     with _cloud_errors():
-        client = PCClient.from_env()
+        client = transport.connect()
         try:
             rows = client.ls(client.resolve_dir(folder)) if folder else client.ls()
         except FileNotFoundError as e:
@@ -122,11 +122,11 @@ def ls(folder: str) -> None:
                    "must already exist).")
 def push(file: Path, remote_folder: str) -> None:
     """Push a document to the private cloud (synced to the device)."""
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     with _cloud_errors():
         try:
-            info = PCClient.from_env().push(file, remote_folder)
+            info = transport.connect().push(file, remote_folder)
         except (FileNotFoundError, FileExistsError) as e:
             raise click.ClickException(str(e)) from e
     click.echo(
@@ -140,12 +140,12 @@ def push(file: Path, remote_folder: str) -> None:
 @click.option("-o", "--output", type=click.Path(path_type=Path), required=True)
 def pull(remote_path: str, output: Path) -> None:
     """Pull a file back from the private cloud (e.g. Document/f.pdf.mark)."""
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     folder, name = _split_remote(remote_path)
     with _cloud_errors():
         try:
-            info = PCClient.from_env().pull(folder, name, output)
+            info = transport.connect().pull(folder, name, output)
         except FileNotFoundError as e:  # covers MissingBytesError phantoms too
             raise click.ClickException(str(e)) from e
     match = "md5 verified" if info["match"] else (
@@ -215,14 +215,14 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None,
     prompt="Delete these files from the private cloud (and, on sync, the device)?")
 def rm(remote_paths: tuple[str, ...]) -> None:
     """Delete files from the private cloud (e.g. Document/f.pdf)."""
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     by_folder: dict[str, list[str]] = {}
     for rp in remote_paths:
         folder, name = _split_remote(rp)
         by_folder.setdefault(folder, []).append(name)
     with _cloud_errors():
-        client = PCClient.from_env()
+        client = transport.connect()
         for folder, names in by_folder.items():
             try:
                 deleted = client.delete(folder, names)
@@ -260,7 +260,7 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     from inkbridge import ops
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     if manifest_path is None:
         sibling = file.with_suffix(".manifest.json")
@@ -268,7 +268,7 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     ledger = Ledger(ledger_path)
     with _cloud_errors(as_json):
         try:
-            payload = ops.dispatch(PCClient.from_env, ledger, file,
+            payload = ops.dispatch(transport.connect, ledger, file,
                                    remote_folder=remote_folder,
                                    manifest_path=manifest_path)
         except FileNotFoundError as e:
@@ -303,14 +303,14 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
 
     from inkbridge import ops
     from inkbridge.dispatch import Ledger
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     ledger = Ledger(ledger_path)
     if not ledger.entries:
         click.echo(f"ledger {ledger.path} is empty — nothing dispatched yet")
         return
     with _cloud_errors(as_json):
-        rows = ops.status(PCClient.from_env, ledger, acknowledge=update)
+        rows = ops.status(transport.connect, ledger, acknowledge=update)
     if as_json:
         click.echo(jsonlib.dumps(rows, indent=2))
         return
@@ -346,12 +346,12 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     from inkbridge import ops
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     ledger = Ledger(ledger_path)
     try:
         with _cloud_errors(as_json), _mark_errors(as_json):
-            payload = ops.collect(PCClient.from_env, ledger, doc_id,
+            payload = ops.collect(transport.connect, ledger, doc_id,
                                   output_dir=Path(output_dir))
     except ops.UnknownDocError as e:
         raise CliError(str(e), code="unknown_doc", exit_status=Exit.NOT_FOUND,
@@ -636,12 +636,12 @@ def doctor(as_json: bool) -> None:
     --json result is a doctor.v1 document listing each check.
     """
     from inkbridge.contract import CliError, Exit, emit_result
-    from inkbridge.transport.private_cloud import PCClient
+    from inkbridge import transport
 
     checks: list[dict] = []
     with _cloud_errors(as_json):
         try:
-            client = PCClient.from_env()
+            client = transport.connect()
         except KeyError as e:
             raise CliError(f"missing cloud configuration: {e}", code="config_missing",
                            exit_status=Exit.PRECONDITION, as_json=as_json) from e
