@@ -39,6 +39,29 @@ class ComposeResult:
 DENSITIES = {"normal": 1.0, "compact": 0.85, "dense": 0.72}
 
 
+def _stamp_decision_bands(cells: list[dict], profile) -> None:
+    """Write per-cell readback decision bands into each manifest cell (G1,
+    ADR-0008). The calibration bands are anchored to the tick box at scale 1.0
+    (``A_ref``); a cell of bbox-pixel-area ``A_cell`` gets bands scaled by
+    ``A_ref / A_cell``, holding the *absolute* ink threshold constant across
+    cell sizes and densities (a deliberate mark is ~constant absolute ink, so
+    its coverage fraction is inversely proportional to area). A standard tick
+    cell at scale 1.0 gets factor 1.0 (bands == base)."""
+    from inkbridge.readback import AMBIGUOUS_FLOOR, ANSWERED_LINE
+
+    ref_side = profile.glyph_box + 2 * profile.glyph_pad  # tick cell, scale 1.0
+    a_ref = float(ref_side * ref_side)
+    canvas_area = float(profile.canvas_w * profile.canvas_h)
+    for cell in cells:
+        _x, _y, w, h = cell["bbox_norm"]
+        a_cell = w * h * canvas_area  # bbox area in px²
+        factor = a_ref / a_cell if a_cell > 0 else 1.0
+        cell["bands"] = {
+            "ambiguous_floor": round(AMBIGUOUS_FLOOR * factor, 8),
+            "answered_line": round(ANSWERED_LINE * factor, 8),
+        }
+
+
 def compose(
     source: str | Path,
     output_pdf: Path,
@@ -77,6 +100,7 @@ def compose(
 
     renderer = Renderer(output_pdf, profile, scale)
     renderer.render(parse(text))
+    _stamp_decision_bands(renderer.cells, profile)
 
     manifest = {
         "doc_id": doc_id,

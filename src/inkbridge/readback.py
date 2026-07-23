@@ -36,7 +36,11 @@ from inkbridge.convert.targeted import (
 
 # 0009 F4 bands, normalized-coverage fractions. Below the floor is stray-dot
 # territory rounding to blank; between floor and line is the escalate band;
-# above the line is a deliberate answer. Provisional — see module docstring.
+# above the line is a deliberate answer. These are the CALIBRATION BASIS anchored
+# to the tick box at scale 1.0 (ADR-0008): compose scales them per cell by the
+# cell's area and writes the result into the manifest, and read_pages decides
+# from those per-cell bands. They survive here as the base compose scales from
+# and as the fallback for a manifest that predates the per-cell `bands` field.
 AMBIGUOUS_FLOOR = 0.001
 ANSWERED_LINE = 0.004
 
@@ -123,20 +127,26 @@ def read_pages(
     readings = []
     for page in sorted(grays):
         gray = grays[page]
-        cells = [
-            CellReading(
+        cells = []
+        for c in by_page.get(page, []):
+            # ADR-0008: the manifest's per-cell bands are authoritative; the
+            # module-global defaults are only the fallback for a manifest that
+            # predates the field, so a decode reads no decision global when the
+            # bands are present.
+            bands = c.get("bands") or {}
+            af = bands.get("ambiguous_floor", ambiguous_floor)
+            al = bands.get("answered_line", answered_line)
+            cov = coverage_in_gray(
+                gray, tuple(c["bbox_norm"]), ink_gray_cutoff=ink_gray_cutoff)
+            cells.append(CellReading(
                 id=c["id"],
                 type=c["type"],
                 label=c.get("label"),
                 page=page,
-                coverage=(cov := coverage_in_gray(
-                    gray, tuple(c["bbox_norm"]), ink_gray_cutoff=ink_gray_cutoff)),
-                decision=decide(
-                    cov, ambiguous_floor=ambiguous_floor, answered_line=answered_line),
+                coverage=cov,
+                decision=decide(cov, ambiguous_floor=af, answered_line=al),
                 group=c.get("group"),
-            )
-            for c in by_page.get(page, [])
-        ]
+            ))
         readings.append(PageReading(
             page=page,
             ink_hash=ink_hash(gray, ink_gray_cutoff=ink_gray_cutoff),

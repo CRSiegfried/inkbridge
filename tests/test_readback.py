@@ -139,6 +139,48 @@ def test_hash_store_persists_across_instances(tmp_path):
     assert fresh.changed("other-doc", 3, "abc")
 
 
+def _paint_block(gray: np.ndarray, bbox_norm, side_px: int) -> None:
+    """Ink a fixed side×side px block at a bbox's top-left — the same ABSOLUTE
+    amount of ink (a mark) regardless of the cell's size."""
+    x, y, _w, _h = bbox_norm
+    x0, y0 = int(x * W), int(y * H)
+    gray[y0:y0 + side_px, x0:x0 + side_px] = 0
+
+
+def test_thresholds_from_manifest_two_cell_sizes():
+    # G1 (ADR-0008): two checkbox cells of markedly different sizes get the same
+    # real mark (same ABSOLUTE ink → very different coverage fractions). With
+    # compose's per-cell manifest bands both decode ANSWERED; a single global
+    # fraction band would mis-decide the large cell.
+    from inkbridge.compose import _stamp_decision_bands
+    from inkbridge.compose.geometry import MANTA
+
+    small = [0.10, 0.10, 0.03, 0.03]   # ~4.4k px² tick
+    big = [0.10, 0.30, 0.30, 0.30]     # ~442k px² area — 100× larger
+    cells = [
+        {"id": "small", "page": 1, "type": "checkbox", "label": "s", "bbox_norm": small},
+        {"id": "big", "page": 1, "type": "checkbox", "label": "b", "bbox_norm": big},
+    ]
+    _stamp_decision_bands(cells, MANTA)  # compose's real per-cell band computation
+    # The bands scale inversely with area: the small cell's is far higher.
+    assert cells[0]["bands"]["answered_line"] > cells[1]["bands"]["answered_line"]
+
+    gray = blank_page()
+    _paint_block(gray, small, 18)   # 324 px of ink...
+    _paint_block(gray, big, 18)     # ...the same 324 px in the 100×-bigger cell
+
+    (reading,) = read_pages({"doc_id": "d", "cells": cells}, {1: gray})
+    d = {c.id: c for c in reading.cells}
+    # Both correctly ANSWERED using only the manifest-borne bands.
+    assert d["small"].decision is Decision.ANSWERED
+    assert d["big"].decision is Decision.ANSWERED
+    # And a single global band would have mis-decided the big cell: its raw
+    # coverage fraction sits below the global ANSWERED_LINE (indeed below the
+    # floor → BLANK), so the per-cell band is what saves it.
+    assert d["big"].coverage < ANSWERED_LINE
+    assert decide(d["big"].coverage) is Decision.BLANK  # what a global would say
+
+
 def test_hash_store_keys_by_doc_and_page(tmp_path):
     store = InkHashStore(tmp_path / "h.json")
     store.update("doc", 1, "x")
