@@ -234,7 +234,8 @@ def rm(remote_paths: tuple[str, ...]) -> None:
 
 _LEDGER_OPT = click.option(
     "--ledger", "ledger_path", type=click.Path(path_type=Path), default=None,
-    help="Dispatch ledger file [default: $INKBRIDGE_LEDGER or ./inkbridge-ledger.json].")
+    help="Dispatch ledger file [default: $INKBRIDGE_LEDGER, else a per-user "
+         "state dir (XDG_STATE_HOME/inkbridge/ledger.json) — never cwd-relative].")
 
 
 @main.command()

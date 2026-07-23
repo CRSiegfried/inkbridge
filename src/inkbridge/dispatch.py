@@ -11,25 +11,50 @@ further strokes. ``mark_md5`` in an entry is the last *acknowledged* ink
 state; ``status`` reports ``changed`` relative to it.
 
 The ledger is instance data — which documents this operator dispatched —
-so the file lives outside the public tree (gitignored default, or
-``$INKBRIDGE_LEDGER``).
+so the file lives outside the public tree: a stable per-user state dir by
+default (A5 — never cwd-relative, or the same command run from two directories
+silently sees two different worlds), or an explicit ``$INKBRIDGE_LEDGER``.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-DEFAULT_LEDGER = "inkbridge-ledger.json"
+# Basename of the ledger inside the resolved state dir (and the historical
+# cwd-relative name $INKBRIDGE_LEDGER may still point at).
+LEDGER_NAME = "ledger.json"
 
 # Cell types a human answers; capture_trigger is the page-level AI-parse box.
 TRIGGER_TYPE = "capture_trigger"
 
 
+def _state_dir() -> Path:
+    """The per-user state directory inkbridge stores instance data under —
+    stable regardless of the current working directory (A5). Honors
+    ``XDG_STATE_HOME`` (the freedesktop base-dir spec), falls back to
+    ``~/.local/state`` on POSIX, and to ``%LOCALAPPDATA%`` on Windows."""
+    xdg = os.environ.get("XDG_STATE_HOME")
+    if xdg:
+        return Path(xdg) / "inkbridge"
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")
+        return Path(base) / "inkbridge"
+    return Path.home() / ".local" / "state" / "inkbridge"
+
+
 def default_ledger_path() -> Path:
-    return Path(os.environ.get("INKBRIDGE_LEDGER", DEFAULT_LEDGER))
+    """The ledger path when none is passed: ``$INKBRIDGE_LEDGER`` verbatim if
+    set (the explicit override — may be relative), else a cwd-independent path
+    in the per-user state dir. The default is resolved absolute so two runs
+    from different directories address the same ledger."""
+    override = os.environ.get("INKBRIDGE_LEDGER")
+    if override:
+        return Path(override)
+    return _state_dir() / LEDGER_NAME
 
 
 def _now() -> str:

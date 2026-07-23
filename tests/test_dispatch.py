@@ -134,10 +134,53 @@ def test_check_entries_one_listing_per_folder(client: PCClient, server: FakeServ
 def test_default_ledger_path_env(monkeypatch, tmp_path: Path):
     from inkbridge.dispatch import default_ledger_path
 
-    monkeypatch.delenv("INKBRIDGE_LEDGER", raising=False)
-    assert default_ledger_path() == Path("inkbridge-ledger.json")
+    # $INKBRIDGE_LEDGER is the explicit override and wins verbatim.
     monkeypatch.setenv("INKBRIDGE_LEDGER", str(tmp_path / "l.json"))
     assert default_ledger_path() == tmp_path / "l.json"
+
+
+def test_default_ledger_path_uses_state_dir(monkeypatch, tmp_path: Path):
+    # A5: no override -> a per-user state dir, honoring XDG_STATE_HOME, never
+    # the cwd.
+    from inkbridge.dispatch import LEDGER_NAME, default_ledger_path
+
+    monkeypatch.delenv("INKBRIDGE_LEDGER", raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert default_ledger_path() == tmp_path / "state" / "inkbridge" / LEDGER_NAME
+
+
+def test_ledger_default_is_cwd_independent(monkeypatch, tmp_path: Path):
+    # A5 gate: the default ledger path resolves to the SAME location from two
+    # different working directories, and lives OUTSIDE the cwd unless the
+    # $INKBRIDGE_LEDGER override says otherwise.
+    import os
+
+    from inkbridge.dispatch import default_ledger_path
+
+    monkeypatch.delenv("INKBRIDGE_LEDGER", raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+
+    dir_a = tmp_path / "a"
+    dir_b = tmp_path / "b"
+    dir_a.mkdir()
+    dir_b.mkdir()
+
+    cwd = os.getcwd()
+    try:
+        os.chdir(dir_a)
+        from_a = default_ledger_path().resolve()
+        os.chdir(dir_b)
+        from_b = default_ledger_path().resolve()
+    finally:
+        os.chdir(cwd)
+
+    assert from_a == from_b                       # cwd-independent
+    assert dir_a not in from_a.parents            # outside the cwd
+    assert dir_b not in from_b.parents
+
+    # The override still lets a caller pin an explicit (even relative) path.
+    monkeypatch.setenv("INKBRIDGE_LEDGER", "pinned.json")
+    assert default_ledger_path() == Path("pinned.json")
 
 
 def test_entry_without_manifest_never_pretends_cells(client: PCClient,
