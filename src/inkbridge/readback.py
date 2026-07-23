@@ -26,6 +26,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 from inkbridge.atomicio import atomic_write_text, file_lock
 from inkbridge.convert.targeted import (
@@ -33,6 +34,35 @@ from inkbridge.convert.targeted import (
     coverage_in_gray,
     decode_page_gray,
 )
+
+
+@runtime_checkable
+class MarkDecoder(Protocol):
+    """The read path's only decode dependency (G5): something that turns a
+    1-indexed page number into a grayscale ndarray, raising ``IndexError`` when
+    the page is absent (a sparse mark). The default is the supernotelib-backed
+    :class:`SupernoteMarkDecoder`, but the decision/answers stack accepts any
+    decoder, so a scanned printout or another brand's export can feed it with no
+    supernotelib on that path."""
+
+    def page_gray(self, page: int):  # -> np.ndarray
+        ...
+
+
+class SupernoteMarkDecoder:
+    """The default :class:`MarkDecoder`: decode a ``.pdf.mark`` page via
+    supernotelib (the one supernotelib touchpoint, imported lazily inside
+    ``decode_page_gray``)."""
+
+    def __init__(self, mark_path: Path):
+        self.mark_path = Path(mark_path)
+
+    @property
+    def source_name(self) -> str:
+        return self.mark_path.name
+
+    def page_gray(self, page: int):
+        return decode_page_gray(self.mark_path, page)
 
 # 0009 F4 bands, normalized-coverage fractions. Below the floor is stray-dot
 # territory rounding to blank; between floor and line is the escalate band;
@@ -158,8 +188,9 @@ def read_pages(
 
 def read_mark(
     manifest: dict | Path,
-    mark_path: Path,
+    mark_path: Path | None = None,
     *,
+    decoder: MarkDecoder | None = None,
     ink_gray_cutoff: int = INK_GRAY_CUTOFF,
     ambiguous_floor: float = AMBIGUOUS_FLOOR,
     answered_line: float = ANSWERED_LINE,
@@ -186,15 +217,21 @@ def read_mark(
     """
     if isinstance(manifest, Path):
         manifest = json.loads(manifest.read_text())
+    if decoder is None:
+        if mark_path is None:
+            raise TypeError("read_mark needs either mark_path or an injected decoder")
+        decoder = SupernoteMarkDecoder(mark_path)
+    source = getattr(decoder, "source_name", None) or (
+        Path(mark_path).name if mark_path else "the mark")
     pages = sorted({c["page"] for c in manifest["cells"]})
     grays = {}
     for p in pages:
         try:
-            grays[p] = decode_page_gray(mark_path, p)
+            grays[p] = decoder.page_gray(p)
         except IndexError as e:
             raise SparseMarkError(
                 f"manifest references page {p} but it is absent from "
-                f"{Path(mark_path).name} — a sparse mark (blank/missing page) "
+                f"{source} — a sparse mark (blank/missing page) "
                 f"can't be read positionally without misattributing ink"
             ) from e
     return read_pages(

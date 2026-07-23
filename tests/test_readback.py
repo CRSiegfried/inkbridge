@@ -296,3 +296,46 @@ def test_sparse_mark_page_identity_refuses_typed():
 
     with pytest.raises(SparseMarkError):
         read_mark(sparse_manifest, mark)
+
+
+def test_answers_from_injected_decoder(tmp_path, monkeypatch):
+    """G5: a fake MarkDecoder built from a plain PNG feeds the answers pipeline
+    end-to-end, with NO supernotelib on that path — proving the read/decision
+    stack is decoupled from the .pdf.mark decoder."""
+    import sys
+
+    from PIL import Image
+
+    from inkbridge.answers import Status, resolve_answers
+    from inkbridge.readback import MarkDecoder
+
+    # A grayscale "page" with one checkbox cell inked — authored as a plain PNG,
+    # nothing supernotelib-shaped about it.
+    cell = [0.10, 0.10, 0.05, 0.03]
+    gray = blank_page()
+    paint(gray, cell, 1.0)  # fully ink the cell -> unambiguously ANSWERED
+    png = tmp_path / "page1.png"
+    Image.fromarray(gray, mode="L").save(png)
+
+    class PngDecoder:
+        """A MarkDecoder that decodes 'pages' from PNG files, not a .mark."""
+        def page_gray(self, page: int):
+            path = tmp_path / f"page{page}.png"
+            if not path.exists():
+                raise IndexError(page)
+            return np.asarray(Image.open(path).convert("L"))
+
+    assert isinstance(PngDecoder(), MarkDecoder)  # structural conformance
+
+    manifest = {"doc_id": "png-doc", "cells": [
+        {"id": "checkbox.agree", "type": "checkbox", "label": "agree",
+         "page": 1, "bbox_norm": cell}]}
+
+    # Block supernotelib entirely: any import on the read path now fails, so a
+    # clean run proves the injected-decoder path never touches it.
+    monkeypatch.setitem(sys.modules, "supernotelib", None)
+
+    readings = read_mark(manifest, decoder=PngDecoder())
+    (answer,) = resolve_answers(readings)
+    assert answer.id == "checkbox.agree"
+    assert answer.status is Status.ANSWERED and answer.value is True
