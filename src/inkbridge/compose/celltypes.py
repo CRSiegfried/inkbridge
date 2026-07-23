@@ -5,7 +5,7 @@ A registered type supplies two callables — one that draws the cell and stamps
 its manifest cell(s), one that resolves a decoded reading to an answer — so a
 new type flows compose→readback→answers with no edit to the render or answers
 core. ``readback`` is already type-agnostic (pure coverage), so it needs
-nothing. See ADR-0009.
+nothing.
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 {
   "doc_id": "sampler-form-41eaabdf",
-  "mark_file": "deploy/local/captures/sampler_form.pdf.mark",
+  "mark_file": "tests/fixtures/sampler_form.pdf.mark",
   "pages": [
     {
       "page": 1,

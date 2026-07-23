@@ -23,7 +23,7 @@ def connect(profile: str | None = None) -> Transport:
 
     The profile is the explicit ``profile`` argument, else the
     ``$INKBRIDGE_PROFILE`` environment default; a named profile's credentials
-    come from ``~/.config/inkbridge/config.toml`` (ADR-0010). With no profile,
+    come from ``~/.config/inkbridge/config.toml``. With no profile,
     the unnamed single-account ``PCClient.from_env`` path (env vars / ``.env``)
     is used unchanged — so the bare ``transport.connect`` the ops layer/CLI pass
     around keeps working, and ``from_env`` is one source among several.

@@ -1,6 +1,6 @@
 """A local-folder transport backend (D3): a watched directory tree standing in
 for the cloud, implementing the same :class:`~inkbridge.transport.base.Transport`
-protocol. It needs no network — the cheapest proof the transport seam (ADR-0007)
+protocol. It needs no network — the cheapest proof the transport seam
 is real, and a de-risking of the single-backend assumption.
 
 The root directory is the "cloud"; its immediate subdirectories are "folders"

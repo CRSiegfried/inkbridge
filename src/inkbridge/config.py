@@ -15,7 +15,7 @@ A profile is selected by name — the explicit argument to
 ``transport.connect`` / this module's helpers, else the ``$INKBRIDGE_PROFILE``
 environment default. With no profile the single-account ``PCClient.from_env``
 path (env vars / ``.env``) is used unchanged, so ``from_env`` is one source
-among several. See ADR-0010.
+among several.
 """
 
 from __future__ import annotations
