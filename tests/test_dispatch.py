@@ -183,6 +183,31 @@ def test_ledger_default_is_cwd_independent(monkeypatch, tmp_path: Path):
     assert default_ledger_path() == Path("pinned.json")
 
 
+def test_atomic_write_survives_crash(monkeypatch, tmp_path: Path):
+    # A3: a crash AFTER the temp file is written but BEFORE the rename must
+    # leave the original ledger intact and parseable (temp-then-os.replace).
+    path = tmp_path / "ledger.json"
+    ledger = Ledger(path)
+    ledger.upsert({"doc_id": "a-1", "remote": {"folder": "Document", "name": "a.pdf"}})
+    ledger.save()
+    original = path.read_bytes()
+
+    import inkbridge.atomicio as atomicio
+
+    def boom(src, dst):  # os.replace stand-in: temp is already written
+        raise OSError("simulated crash before rename")
+
+    monkeypatch.setattr(atomicio.os, "replace", boom)
+    ledger.upsert({"doc_id": "b-2", "remote": {"folder": "Document", "name": "b.pdf"}})
+    with pytest.raises(OSError):
+        ledger.save()
+
+    # Original ledger untouched and still parseable; no temp left behind.
+    assert path.read_bytes() == original
+    assert [e["doc_id"] for e in Ledger(path).entries] == ["a-1"]
+    assert not list(tmp_path.glob(".*tmp*"))
+
+
 def test_entry_without_manifest_never_pretends_cells(client: PCClient,
                                                      tmp_path: Path):
     # collect refuses manifest-less entries at the CLI layer; the ledger

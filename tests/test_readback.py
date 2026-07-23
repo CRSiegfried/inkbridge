@@ -145,6 +145,31 @@ def test_hash_store_keys_by_doc_and_page(tmp_path):
     assert store.changed("doc", 2, "x")
 
 
+def test_atomic_write_survives_crash(monkeypatch, tmp_path):
+    # A3: a crash AFTER the temp file is written but BEFORE the rename must
+    # leave the hash store intact and parseable (temp-then-os.replace).
+    path = tmp_path / "h.json"
+    store = InkHashStore(path)
+    store.update("doc", 1, "first")
+    original = path.read_bytes()
+
+    import inkbridge.atomicio as atomicio
+
+    def boom(src, dst):  # os.replace stand-in: temp is already written
+        raise OSError("simulated crash before rename")
+
+    monkeypatch.setattr(atomicio.os, "replace", boom)
+    with pytest.raises(OSError):
+        store.update("doc", 2, "second")
+
+    # Store untouched and still parseable; the crashed update left no temp.
+    assert path.read_bytes() == original
+    fresh = InkHashStore(path)
+    assert not fresh.changed("doc", 1, "first")   # page 1 survived
+    assert fresh.changed("doc", 2, "second")      # page 2 write was rolled back
+    assert not list(tmp_path.glob(".*tmp*"))
+
+
 @pytest.mark.parametrize("fill,expected", [
     (0.0, Decision.BLANK),
     (1.0, Decision.ANSWERED),

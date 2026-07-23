@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
+from inkbridge.atomicio import atomic_write_text, file_lock
 from inkbridge.convert.targeted import (
     INK_GRAY_CUTOFF,
     coverage_in_gray,
@@ -213,6 +214,16 @@ class InkHashStore:
         return self._hashes.get(self._key(doc_id, page)) != page_ink_hash
 
     def update(self, doc_id: str, page: int, page_ink_hash: str) -> None:
-        self._hashes[self._key(doc_id, page)] = page_ink_hash
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self._hashes, indent=2, sort_keys=True) + "\n")
+        """Record a page's ink hash crash-safely (A3): under an advisory lock,
+        re-read the on-disk store and merge this key in before writing (so a
+        concurrent writer's other-page update isn't lost), then write via an
+        atomic temp-then-rename (so a crash can't corrupt the store)."""
+        key = self._key(doc_id, page)
+        with file_lock(self.path):
+            if self.path.exists():
+                # Merge onto the latest on-disk state, not our load-time snapshot,
+                # so two processes updating different pages don't clobber.
+                self._hashes = json.loads(self.path.read_text())
+            self._hashes[key] = page_ink_hash
+            atomic_write_text(
+                self.path, json.dumps(self._hashes, indent=2, sort_keys=True) + "\n")

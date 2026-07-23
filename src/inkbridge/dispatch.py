@@ -24,6 +24,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from inkbridge.atomicio import atomic_write_text, file_lock
+
 # Basename of the ledger inside the resolved state dir (and the historical
 # cwd-relative name $INKBRIDGE_LEDGER may still point at).
 LEDGER_NAME = "ledger.json"
@@ -81,9 +83,13 @@ class Ledger:
         ] + [entry]
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps({"entries": self.entries}, indent=2) + "\n")
+        """Persist the ledger crash-safely (A3): under an advisory lock, so a
+        concurrent writer is serialized rather than clobbering this one, and via
+        an atomic temp-then-rename, so a crash mid-write can't corrupt the file
+        (a reader always sees the whole old or whole new ledger)."""
+        with file_lock(self.path):
+            atomic_write_text(
+                self.path, json.dumps({"entries": self.entries}, indent=2) + "\n")
 
 
 def entry_for(
