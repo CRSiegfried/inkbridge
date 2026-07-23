@@ -38,9 +38,9 @@ marked by hand, and read the answers back. `composite` reconstructs the
 combined page — decoded `.pdf.mark` ink overlaid on the rendered base page —
 into a single image host-side, the capture render handed to a VLM. `merge`
 (PDF chaining) works standalone. `.note`-to-PDF conversion is still a stub;
-the private-cloud transport is the supported path. A second backend implements
-the `Transport` protocol (`transport/base.py`) and is validated by the
-conformance suite — the official Supernote Cloud backend is future work.
+the private-cloud transport is the supported path. The `Transport` protocol
+(`transport/base.py`) plus its conformance suite are the seam a second backend
+implements against — the official Supernote Cloud backend is future work.
 
 Contributions and Manta owners willing to test the device-facing commands are
 welcome.
