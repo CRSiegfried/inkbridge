@@ -29,6 +29,7 @@ push/pull paths already raise propagate unchanged for the CLI to map too.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 from inkbridge import readback as _readback
@@ -53,6 +54,10 @@ class NoResponseError(Exception):
 class AlreadyTrackedError(Exception):
     """The remote file reconcile was asked to adopt is already in the ledger —
     it is not an orphan (CLI → NO_CHANGE)."""
+
+
+class WaitTimeout(Exception):
+    """``wait`` polled to its deadline without a mark arriving (CLI → NO_CHANGE)."""
 
 
 def dispatch(connect, ledger, file, *, remote_folder, manifest_path, replace=False):
@@ -184,3 +189,36 @@ def collect(connect, ledger, doc_id, *, output_dir):
     sidecar.write_text(
         json.dumps({"schema_version": ANSWERS_SCHEMA, **payload}, indent=2) + "\n")
     return {**payload, "answers_file": str(sidecar)}
+
+
+def wait(connect, ledger, doc_id, *, timeout, poll_interval=2.0, max_interval=30.0,
+         sleep=time.sleep, monotonic=time.monotonic):
+    """Bounded long-poll for ``doc_id``'s mark to arrive — the synchronizing
+    verb of the dispatch→(human inks)→collect loop (D1). Polls ``status`` with
+    exponential backoff (``poll_interval`` doubling to ``max_interval``) until a
+    mark lands (state ``responded``/``changed``) or the ``timeout`` window
+    elapses. Returns a status-row dict on arrival; raises ``WaitTimeout`` if none
+    arrives, or ``UnknownDocError`` for an unknown doc.
+
+    ``sleep``/``monotonic`` are injectable so a test drives the backoff loop
+    deterministically without real waiting.
+    """
+    entry = ledger.find(doc_id)
+    if entry is None:
+        raise UnknownDocError(
+            f"no ledger entry for doc_id {doc_id!r} in {ledger.path}")
+
+    client = connect()  # one login for the whole poll, not one per tick
+    deadline = monotonic() + timeout
+    interval = poll_interval
+    while True:
+        (row,) = check_entries([entry], client)
+        if row["state"] in ("responded", "changed"):
+            return {k: row[k] for k in
+                    ("doc_id", "remote", "state", "mark_md5", "base_changed")}
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise WaitTimeout(
+                f"no mark for {doc_id} within {timeout:g}s (last state: {row['state']})")
+        sleep(min(interval, remaining))
+        interval = min(interval * 2, max_interval)

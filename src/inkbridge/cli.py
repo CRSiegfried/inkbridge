@@ -467,6 +467,43 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
 @main.command()
 @click.argument("doc_id")
 @_LEDGER_OPT
+@click.option("--timeout", default=300.0, show_default=True,
+              help="Seconds to wait for a mark before giving up (exit 3).")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def wait(doc_id: str, ledger_path: Path | None, timeout: float,
+         as_json: bool) -> None:
+    """Block until DOC_ID's .pdf.mark response arrives, then exit 0 — the
+    synchronizing verb of the dispatch → (human inks) → collect loop (D1).
+    Bounded long-poll with exponential backoff; exit 3 (no change) on timeout,
+    4 for an unknown doc_id.
+
+    Contract (ADR-0002): the --json result is a wait.v1 status row (doc_id,
+    remote, state, mark_md5, base_changed).
+    """
+    from inkbridge import ops, transport
+    from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.dispatch import Ledger
+
+    ledger = Ledger(ledger_path)
+    with _cloud_errors(as_json):
+        try:
+            payload = ops.wait(transport.connect, ledger, doc_id, timeout=timeout)
+        except ops.UnknownDocError as e:
+            raise CliError(str(e), code="unknown_doc", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+        except ops.WaitTimeout as e:
+            raise CliError(str(e), code="timeout", exit_status=Exit.NO_CHANGE,
+                           as_json=as_json) from e
+    if as_json:
+        emit_result(payload, "wait.v1")
+        return
+    click.echo(f"{payload['doc_id']} {payload['remote']} "
+               f"{payload['state'].upper()} (md5 {payload['mark_md5']})")
+
+
+@main.command()
+@click.argument("doc_id")
+@_LEDGER_OPT
 @click.option("-o", "--output-dir", type=click.Path(path_type=Path),
               default=Path("responses"), show_default=True,
               help="Where the pulled .pdf.mark and .answers.json sidecar land.")

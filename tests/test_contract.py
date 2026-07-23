@@ -90,6 +90,8 @@ def _argv(env, cmd: str) -> list[str]:
                       "--manifest", str(env.sampler_manifest),
                       "--ledger", str(env.tmp / "recon.json"), "--json"],
         "status": ["status", "--ledger", str(env.ledger), "--json"],
+        "wait": ["wait", "sampler-collect", "--ledger", str(env.ledger),
+                 "--timeout", "5", "--json"],
         "collect": ["collect", "sampler-collect", "--ledger", str(env.ledger),
                     "-o", str(out), "--json"],
         "readback": ["readback", str(env.sampler_manifest), str(env.sampler_mark),
@@ -110,7 +112,8 @@ def _argv(env, cmd: str) -> list[str]:
 # this test is that NO command is off the contract.
 ALL_COMMANDS = [
     "doctor", "ls", "push", "pull", "rm", "dispatch", "reconcile", "status",
-    "collect", "readback", "answers", "composite", "proof", "merge", "compose",
+    "wait", "collect", "readback", "answers", "composite", "proof", "merge",
+    "compose",
 ]
 
 
