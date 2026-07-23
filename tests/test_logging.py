@@ -13,7 +13,9 @@ The load-bearing invariants:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 
 import httpx
 from click.testing import CliRunner
@@ -124,3 +126,65 @@ def test_inkbridge_log_env_var_is_honored(server: FakeServer, monkeypatch, tmp_p
     assert res.exit_code == 0
     assert res.stderr == ""
     assert "invoke: inkbridge" in log_path.read_text()
+
+
+# ---------------------------------------------------------------------------
+# D5: every transport verb emits a timed request line at -v (INFO), not only -vv
+# ---------------------------------------------------------------------------
+
+_TIMED_REQUEST = re.compile(r"\b(GET|POST|PUT)\b.*ms")
+
+
+def _seed_markable(server: FakeServer):
+    """A base row + a real-bytes .mark blob so pull/collect download for real."""
+    data = b"markbytes"
+    server.rows["form.pdf"] = server.row("form.pdf", "b" * 32, 10, "id-form.pdf")
+    server.rows["form.pdf.mark"] = server.row(
+        "form.pdf.mark", hashlib.md5(data).hexdigest(), len(data), "id-form.pdf.mark")
+    server.blobs["inner-form.pdf.mark"] = data
+
+
+def test_verbose_logs_timed_upload_request(server: FakeServer, monkeypatch, tmp_path):
+    # dispatch uploads: at -v, stderr carries a timed upload line (POST/PUT ... ms)
+    # and the ls-verify line, while stdout stays valid contract JSON.
+    _stub_from_env(monkeypatch, lambda cls, env_file=None: _live_client(server))
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+
+    res = _invoke("-v", "dispatch", str(f), "--ledger", str(tmp_path / "l.json"), "--json")
+    assert res.exit_code == 0
+    json.loads(res.stdout)  # stdout is pure contract JSON
+    assert _TIMED_REQUEST.search(res.stderr), res.stderr
+    assert "PUT /oss/upload" in res.stderr           # the byte upload, timed
+    assert "/file/list/query" in res.stderr          # the ls verify, timed
+
+
+def test_verbose_logs_timed_download_request(server: FakeServer, monkeypatch, tmp_path):
+    # collect downloads: at -v, stderr carries a timed download line (GET ... ms).
+    _seed_markable(server)
+    _stub_from_env(monkeypatch, lambda cls, env_file=None: _live_client(server))
+    manifest = tmp_path / "form.manifest.json"
+    manifest.write_text(json.dumps({"doc_id": "form-1", "cells": []}))
+    ledger = tmp_path / "l.json"
+    ledger.write_text(json.dumps({"entries": [{
+        "doc_id": "form-1", "remote": {"folder": "Document", "name": "form.pdf"},
+        "manifest": str(manifest), "mark_md5": None, "acknowledged_at": None,
+    }]}))
+
+    res = _invoke("-v", "collect", "form-1", "--ledger", str(ledger),
+                  "-o", str(tmp_path / "out"), "--json")
+    assert res.exit_code == 0
+    json.loads(res.stdout)
+    assert "GET blob" in res.stderr and _TIMED_REQUEST.search(res.stderr), res.stderr
+
+
+def test_default_invocation_emits_no_request_lines(server: FakeServer, monkeypatch, tmp_path):
+    # Without -v, the per-request timing lines must NOT leak (stderr silent).
+    _stub_from_env(monkeypatch, lambda cls, env_file=None: _live_client(server))
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+
+    res = _invoke("dispatch", str(f), "--ledger", str(tmp_path / "l.json"), "--json")
+    assert res.exit_code == 0
+    assert res.stderr == ""
+    assert not _TIMED_REQUEST.search(res.stderr)

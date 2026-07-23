@@ -121,7 +121,9 @@ class PCClient:
             headers["x-access-token"] = self.token
         start = time.monotonic()
         r = self.http.post(self.api + endpoint, json=payload, headers=headers)
-        _log.debug(
+        # One timed request line per API call, at INFO so a plain -v surfaces
+        # per-request activity (D5) while stdout stays contract-pure.
+        _log.info(
             "POST %s -> %d (%.0fms)", endpoint, r.status_code,
             (time.monotonic() - start) * 1000,
         )
@@ -251,8 +253,15 @@ class PCClient:
         extra = urlencode({k: apply_[k] for k in ("innerName", "fileName") if apply_.get(k)})
         if extra:
             url += ("&" if "?" in url else "?") + extra
+        up_start = time.monotonic()
         r = self.http.post(url, files={"file": (path.name, blob, "application/octet-stream")},
                            headers={"x-access-token": self.token})
+        # The actual byte upload (multipart) — its own timed line at INFO (D5),
+        # since it bypasses _call.
+        _log.info(
+            "PUT %s -> %d (%d bytes, %.0fms)", "/oss/upload (multipart)",
+            r.status_code, len(blob), (time.monotonic() - up_start) * 1000,
+        )
         r.raise_for_status()
         body = r.json()
         if not body.get("success", False):
@@ -314,8 +323,15 @@ class PCClient:
                     "server-side (E0321 phantom row; reconciliation will purge it)"
                 ) from e
             raise
+        dl_start = time.monotonic()
         r = self.http.get(data["url"], follow_redirects=True,
                           headers={"x-access-token": self.token})
+        # The actual byte download — its own timed line at INFO (D5), since it
+        # bypasses _call.
+        _log.info(
+            "GET %s -> %d (%d bytes, %.0fms)", "blob", r.status_code,
+            len(r.content), (time.monotonic() - dl_start) * 1000,
+        )
         r.raise_for_status()
         # 0013 F7: the URL fetch itself can come back as a JSON error body
         # (the live capture saw E0321 at this hop) instead of file bytes.
