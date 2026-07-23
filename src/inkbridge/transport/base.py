@@ -1,10 +1,10 @@
-"""The transport seam (ADR-0007): a backend-neutral ``Transport`` protocol and
+"""The transport seam: a backend-neutral ``Transport`` protocol and
 the transport-neutral exceptions the CLI's exit taxonomy maps.
 
 ``Transport`` is the **post-connection** surface the CLI and ``ops`` actually
 call — ``ls``/``resolve_dir``/``push``/``pull``/``delete``. It deliberately
 omits ``login``/``from_env``: construction and credentials are the connector's
-job (``transport.connect``, ADR-0006's zero-arg seam), and login shape is
+job (``transport.connect``, the zero-arg seam), and login shape is
 backend-specific. A directory is an opaque :data:`DirHandle` that
 ``resolve_dir`` mints and ``ls`` consumes — the private cloud's handle happens
 to be an ``int``; nothing here commits to that.

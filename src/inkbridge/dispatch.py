@@ -3,7 +3,7 @@ readback's decode (vision pillar 4).
 
 A ledger entry records what was pushed, from which manifest, and that a
 response is expected, so a later poll can go from a remote listing row back
-to the manifest without human memory. The identity join is Analysis 0011's:
+to the manifest without human memory. The identity join is content-hash based:
 the base row is anchored by its content ``md5`` (static across annotation —
 the ink-pure signal), the response is the sibling ``<name>.mark`` row, and
 that row's ``md5`` is the ink signal: 0→1 on first ink, then churn on

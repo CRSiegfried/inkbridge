@@ -47,7 +47,7 @@ def _split_remote(remote_path: str) -> tuple[str, str]:
 
 @contextmanager
 def _cloud_errors(as_json: bool = False):
-    """Translate transport failures into the ADR-0002 exit taxonomy so a
+    """Translate transport failures into the agent-facing exit taxonomy so a
     cloud command emits a typed exit instead of a bare traceback: rejected or
     expired credentials -> AUTH(5); the cloud being unreachable (DNS, connect,
     timeout) -> PRECONDITION(6). Anything else propagates unchanged.
@@ -73,14 +73,14 @@ def _cloud_errors(as_json: bool = False):
 
 @contextmanager
 def _mark_errors(as_json: bool = False):
-    """Translate a sparse-mark refusal into the ADR-0002 exit taxonomy: a
+    """Translate a sparse-mark refusal into the agent-facing exit taxonomy: a
     manifest page absent from the pulled mark (a sparse mark — blank/missing
-    page — that can't be read positionally, ADR-0004) becomes a typed
+    page — that can't be read positionally) becomes a typed
     PRECONDITION(6), not an uncaught traceback an agent can't branch on.
 
     Wrap the region that decodes a ``.pdf.mark`` — ``read_mark`` directly
     (``readback``/``answers``) or via ``ops.collect``. This is the CLI-side
-    home of the ``SparseMarkError`` mapping that ADR-0006 moved out of the
+    home of the ``SparseMarkError`` mapping that the ops layer moved out of the
     shared read path so ``ops`` stays free of ``CliError``.
     """
     from inkbridge.contract import CliError, Exit
@@ -99,7 +99,7 @@ def _mark_errors(as_json: bool = False):
 def ls(folder: str, as_json: bool) -> None:
     """List a private-cloud folder (the root if omitted; nested paths ok).
 
-    Contract (ADR-0002): the --json result is an ls.v1 document with the folder
+    Contract: the --json result is an ls.v1 document with the folder
     and its entries. Exit 4 if the folder does not exist, 5 auth, 6 unreachable.
     """
     from inkbridge import transport
@@ -144,7 +144,7 @@ def ls(folder: str, as_json: bool) -> None:
 def push(file: Path, remote_folder: str, as_json: bool) -> None:
     """Push a document to the private cloud (synced to the device).
 
-    Contract (ADR-0002): the --json result is a push.v1 document with the remote
+    Contract: the --json result is a push.v1 document with the remote
     location, size, and md5. Exit 4 if the folder is missing, 1 if the name is
     already taken (no overwrite), 5 auth, 6 unreachable.
     """
@@ -182,7 +182,7 @@ def push(file: Path, remote_folder: str, as_json: bool) -> None:
 def pull(remote_path: str, output: Path, as_json: bool) -> None:
     """Pull a file back from the private cloud (e.g. Document/f.pdf.mark).
 
-    Contract (ADR-0002): the --json result is a pull.v1 document with the output
+    Contract: the --json result is a pull.v1 document with the output
     path, size, and md5-match. Exit 4 if the remote file is absent, 5 auth,
     6 unreachable.
     """
@@ -233,7 +233,7 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None,
             device: str, density: str, scale: float | None, as_json: bool) -> None:
     """Render markdown to a row-grid PDF + input-area manifest (Phase 2.5).
 
-    Contract-compliant (ADR-0002): the --json result is a compose.v1 document
+    Contract-compliant: the --json result is a compose.v1 document
     carrying the generated doc_id, output paths, and cell/page counts. Exit 1
     on unrenderable source.
     """
@@ -344,7 +344,7 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     response — the .pdf.mark sidecar the device syncs back once inked.
     'inkbridge status' polls for it; 'inkbridge collect' reads it back.
 
-    Contract-compliant (ADR-0002): the --json result is a dispatch.v1 document
+    Contract-compliant: the --json result is a dispatch.v1 document
     carrying the recorded doc_id, remote location, cell counts, and ledger
     path. Exit 4 when the remote folder does not exist, 1 already_exists (use
     --replace to re-dispatch idempotently), 5 auth, 6 unreachable.
@@ -396,7 +396,7 @@ def reconcile(remote_path: str, manifest_path: Path | None,
     that pushed then crashed before saving, or a file pushed out of band — so
     'status'/'collect' can track it again.
 
-    Contract (ADR-0002): the --json result is a reconcile.v1 document with the
+    Contract: the --json result is a reconcile.v1 document with the
     recorded doc_id, remote, base_md5, and ledger path. Exit 3 when the file is
     already tracked (not an orphan), 4 when no such remote file exists, 5 auth,
     6 unreachable.
@@ -436,7 +436,7 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
     """Poll the private cloud for responses to dispatched documents:
     waiting / RESPONDED / CHANGED / seen / missing per ledger entry.
 
-    Contract (ADR-0002): the --json result is a status.v1 document carrying the
+    Contract: the --json result is a status.v1 document carrying the
     ledger path and one row per entry (through the schema_version envelope, not
     a bare list). Exit 5 auth, 6 unreachable.
     """
@@ -477,7 +477,7 @@ def wait(doc_id: str, ledger_path: Path | None, timeout: float,
     Bounded long-poll with exponential backoff; exit 3 (no change) on timeout,
     4 for an unknown doc_id.
 
-    Contract (ADR-0002): the --json result is a wait.v1 status row (doc_id,
+    Contract: the --json result is a wait.v1 status row (doc_id,
     remote, state, mark_md5, base_changed).
     """
     from inkbridge import ops, transport
@@ -513,14 +513,14 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     """Pull DOC_ID's .pdf.mark response and materialize its answers: resolve
     the ink against the compose manifest and write a `<doc>.answers.json`
     sidecar (the answers.v1 document plus the mark md5 it reflects) beside the
-    pulled mark. Reading state is then just parsing that file (ADR-0003).
+    pulled mark. Reading state is then just parsing that file.
 
     Unlike before, collect does NOT acknowledge or advance the ledger —
     reacting is left to the agent loop / an external watcher diffing the
-    sidecar's mark_md5 against 'inkbridge status'. Contract-compliant
-    (ADR-0002): exit 3 (no change) when there's no response yet, 4 for an
+    sidecar's mark_md5 against 'inkbridge status'. Contract-compliant:
+    exit 3 (no change) when there's no response yet, 4 for an
     unknown doc_id, 6 when the doc was dispatched without a manifest or the
-    pulled mark is sparse (a blank page can't be read positionally, ADR-0004).
+    pulled mark is sparse (a blank page can't be read positionally).
     """
     from inkbridge import ops
     from inkbridge.contract import CliError, Exit, emit_result
@@ -625,7 +625,7 @@ def answers(manifest: Path, mark_file: Path, as_json: bool) -> None:
     winner or conflict, checkbox/ack boolean, comb/capture presence — or
     needs_review carrying the cell id to composite.
 
-    A pure read (ADR-0002): it never touches ledger, remote, or local state,
+    A pure read: it never touches ledger, remote, or local state,
     so an agent can re-inspect a response as often as it likes. This is the
     on-the-fly resolver; 'inkbridge collect' persists the same payload as a
     `<doc>.answers.json` sidecar. Run 'inkbridge readback' for the raw cells.
@@ -718,7 +718,7 @@ def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
     """Overlay decoded .pdf.mark ink onto the rendered base PDF page —
     the capture render sent to a VLM (0012 F5). Never a coverage target.
 
-    Contract (ADR-0002): the --json result is a composite.v1 document with the
+    Contract: the --json result is a composite.v1 document with the
     output path and pixel dimensions. Exit 4 when --cell names no such cell.
     """
     import json as jsonlib
@@ -755,11 +755,11 @@ def composite(base_pdf: Path, mark_file: Path, page: int, output: Path,
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 @click.pass_context
 def proof(ctx: click.Context, manifest: Path, as_json: bool) -> None:
-    """Device-free self-test (Analysis 0017 F8): stamp synthetic ink into
+    """Device-free self-test: stamp synthetic ink into
     every cell of MANIFEST, read it back, and assert every cell reads
     ANSWERED. Catches manifest/readback drift with no device and no human.
 
-    Contract (ADR-0002): exit 0 when every cell passes, 1 when any cell fails
+    Contract: exit 0 when every cell passes, 1 when any cell fails
     to read ANSWERED, 4 for a missing manifest. The --json result carries the
     per-cell failures.
     """
@@ -812,7 +812,7 @@ def merge(base: Path, addition: Path, output: Path, position: str,
           as_json: bool) -> None:
     """Merge two PDF documents into one.
 
-    BASE and ADDITION are PDFs. Contract (ADR-0002): the --json result is a
+    BASE and ADDITION are PDFs. Contract: the --json result is a
     merge.v1 document with the output path. Exit 1 on an unmergeable input —
     a `.note` input (not yet supported) is a typed `unsupported_input` error,
     never an uncaught NotImplementedError (D2).
@@ -838,7 +838,7 @@ def merge(base: Path, addition: Path, output: Path, position: str,
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def doctor(as_json: bool) -> None:
     """Check the integration is ready before dispatching: cloud configured,
-    reachable, and the credentials accepted (ADR-0002 doctor-class).
+    reachable, and the credentials accepted.
 
     Unlike 'proof' (a device-free manifest/readback self-test that never
     contacts the cloud), doctor is the cloud/auth/connectivity probe: it logs

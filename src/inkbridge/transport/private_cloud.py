@@ -1,11 +1,11 @@
 """Supernote Private-Cloud transport.
 
-Implements the private-cloud dialect captured in Analysis 0013/0015:
+Implements the private-cloud dialect:
 sncloud-compatible login (randomCode + sha256(md5(pw)+rc)), listing, the
 custom upload flow (upload/apply -> multipart POST /api/oss/upload ->
 upload/finish), and download-URL fetch.
 
-The upload contract (Analysis 0013 finding 7) is load-bearing here:
+The upload contract is load-bearing here:
 
 - ``POST /api/oss/upload`` needs both the signed query from ``upload/apply``
   and the ``x-access-token`` header; a stripped signature fails as HTTP 200
@@ -58,7 +58,7 @@ class AuthError(PrivateCloudError, base.AuthError):
     or a 401/403 on an authenticated call (a missing or expired token). A
     typed subclass — like :class:`MissingBytesError` — so the CLI maps it to
     the contract's AUTH(5) exit without inspecting error strings. Also a
-    :class:`inkbridge.transport.base.AuthError` (ADR-0007) so ``_cloud_errors``
+    :class:`inkbridge.transport.base.AuthError` so ``_cloud_errors``
     can catch the transport-neutral type; the 3-arg ``PrivateCloudError``
     constructor and message are unchanged (it wins the MRO).
     """
@@ -66,11 +66,10 @@ class AuthError(PrivateCloudError, base.AuthError):
 
 class MissingBytesError(base.MissingBytesError):
     """The listing has a row for the file but the bytes are not on disk
-    server-side (E0321). Analysis 0013 F7: this is a benign phantom row —
+    server-side (E0321). This is a benign phantom row —
     ``upload/finish`` trusts the client, and login-triggered reconciliation
     purges such rows later. Pollers should treat this as "not there yet",
-    not as corruption. Still a ``FileNotFoundError`` via the neutral base
-    (ADR-0007).
+    not as corruption. Still a ``FileNotFoundError`` via the neutral base.
     """
 
 

@@ -1,4 +1,4 @@
-"""Row-grid page geometry for the compose renderer (Analysis 0012 finding 8).
+"""Row-grid page geometry for the compose renderer.
 
 Everything is drawn in device-pixel, top-left-origin coordinates on the
 target device's note canvas; the PDF page is the same sheet at 1 pt = 4

@@ -1,7 +1,7 @@
 """inkbridge: an agent-facing I/O control plane for the Supernote Manta.
 
-Public API (D6). The in-process operations layer (:mod:`inkbridge.ops`,
-ADR-0006) and the transport seam (:mod:`inkbridge.transport`, ADR-0007) are the
+Public API (D6). The in-process operations layer (:mod:`inkbridge.ops`)
+and the transport seam (:mod:`inkbridge.transport`) are the
 intended entry points for an embedder (e.g. the future MCP server) —
 ``inkbridge.ops.dispatch(...)`` etc. and the ``Transport`` protocol / ``connect``
 factory. They are exposed lazily (PEP 562) so ``import inkbridge`` stays cheap:

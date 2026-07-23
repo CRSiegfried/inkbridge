@@ -1,4 +1,4 @@
-"""Semantic, question-level results (Analysis 0017 finding 1).
+"""Semantic, question-level results.
 
 ``collect``/``readback`` hand back raw cells; the agent's real question is
 never "what is the ink coverage of ``choice.next-store-run.heb``" but "what
@@ -206,8 +206,8 @@ def answers_payload(
 ) -> dict:
     """The ``answers.v1`` payload body (the object under the ``schema_version``
     envelope key). Shared by the ``answers`` command's ``--json`` output and
-    the ``<doc>.answers.json`` sidecar that ``collect`` materializes
-    (ADR-0003), so the live and persisted shapes cannot drift. ``mark_md5`` —
+    the ``<doc>.answers.json`` sidecar that ``collect`` materializes,
+    so the live and persisted shapes cannot drift. ``mark_md5`` —
     the provenance of the ink these answers reflect — is included only when
     known (``collect`` has it from the pull; the ad-hoc command does not)."""
     payload: dict = {"doc_id": doc_id, "mark_file": str(mark_file)}

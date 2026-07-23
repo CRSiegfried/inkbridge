@@ -1,4 +1,4 @@
-"""Markdown → block IR for the compose renderer (Analysis 0012 finding 9).
+"""Markdown → block IR for the compose renderer.
 
 Parsing is off-the-shelf (markdown-it-py); this module only walks the token
 stream into a flat list of blocks the row-grid renderer can deal onto rows.

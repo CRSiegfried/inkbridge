@@ -1,4 +1,4 @@
-"""Pinned, embedded fonts for deterministic layout (Analysis 0012 finding 9.3).
+"""Pinned, embedded fonts for deterministic layout.
 
 Word-wrap uses the renderer's own string-width metrics, so those metrics
 must not depend on the environment: we register Bitstream Vera (frozen

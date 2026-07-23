@@ -1,7 +1,7 @@
 """Optional, contract-safe logging for inkbridge.
 
 inkbridge is driven as a subprocess by peers (chiefly the assistant's
-``SupernoteAdapter``) over the ADR-0002 ``--json`` contract, which owns **stdout
+``SupernoteAdapter``) over the ``--json`` contract, which owns **stdout
 byte-for-byte**. So logging here NEVER writes to stdout, and is **silent by
 default** — the byte-for-byte stdout (and the JSON error envelope on stderr) are
 unchanged unless a caller opts in.

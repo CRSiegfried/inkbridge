@@ -1,4 +1,4 @@
-"""Agent-facing CLI contract (ADR-0002): the shared machine-legibility
+"""Agent-facing CLI contract: the shared machine-legibility
 scaffolding every command inherits instead of re-implementing.
 
 Provides the four cross-cutting pieces the ADR mandates:
@@ -37,7 +37,7 @@ import click
 
 
 class Exit(IntEnum):
-    """ADR-0002 exit-code taxonomy. Values are the process exit codes; an
+    """Agent-facing exit-code taxonomy. Values are the process exit codes; an
     agent branches on these without parsing output."""
 
     OK = 0            # completed and did something
@@ -55,7 +55,7 @@ ERROR_SCHEMA = "error.v1"
 
 
 class CliError(click.ClickException):
-    """A contract-compliant failure (ADR-0002 §Decision 3-4).
+    """A contract-compliant failure (§Decision 3-4).
 
     Carries a stable machine ``code`` and one of the :class:`Exit` statuses,
     and renders to *stderr* — a one-line ``error: ...`` in human mode, or a
@@ -102,12 +102,12 @@ class CliError(click.ClickException):
 
 def emit_result(payload: dict, schema_version: str) -> None:
     """Write a command's JSON result document to stdout — the ONLY thing on
-    stdout under ``--json`` (ADR-0002 §Decision 1). ``schema_version`` is
+    stdout under ``--json`` (§Decision 1). ``schema_version`` is
     stamped in as the leading key."""
     click.echo(json.dumps({"schema_version": schema_version, **payload}, indent=2))
 
 
 def log(message: str) -> None:
     """Emit a progress/diagnostic line to stderr, so stdout stays the pure
-    result document under ``--json`` (ADR-0002 §Decision 1)."""
+    result document under ``--json`` (§Decision 1)."""
     click.echo(message, err=True)

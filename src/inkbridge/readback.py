@@ -1,7 +1,7 @@
 """Readback: a compose manifest + a pulled ``.pdf.mark`` → per-cell
 three-way decisions, plus per-page ink hashes for re-dispatch idempotency.
 
-Decisions follow the Analysis 0009 F4 contract — blank / ANSWERED /
+Decisions are three-way — blank / ANSWERED /
 AMBIGUOUS-escalate, never a boolean — computed over the *isolated* mark
 decode, where printed glyphs are byte-level absent and a true blank reads
 exactly 0.000 (0009 F3, the two-render discipline).
@@ -12,7 +12,7 @@ numbers are geometry-dependent and do not transfer to new cell sizes;
 recalibration against compose's row-grid cells is pending the annotated
 sampler, so treat these as provisional defaults, not calibrated constants.
 
-The ink-hash store implements Analysis 0012 F6: a ticked capture box stays
+The ink-hash store handles re-dispatch churn: a ticked capture box stays
 ticked, so a poller re-dispatching every flagged page would loop forever.
 Storing a hash of each page's decoded ink bitmap and re-dispatching only on
 change handles "user added more scribbles later" and gets erase-to-reset
@@ -37,7 +37,7 @@ from inkbridge.convert.targeted import (
 # 0009 F4 bands, normalized-coverage fractions. Below the floor is stray-dot
 # territory rounding to blank; between floor and line is the escalate band;
 # above the line is a deliberate answer. These are the CALIBRATION BASIS anchored
-# to the tick box at scale 1.0 (ADR-0008): compose scales them per cell by the
+# to the tick box at scale 1.0: compose scales them per cell by the
 # cell's area and writes the result into the manifest, and read_pages decides
 # from those per-cell bands. They survive here as the base compose scales from
 # and as the fallback for a manifest that predates the per-cell `bands` field.
@@ -51,9 +51,10 @@ class SparseMarkError(Exception):
     The mark is sparse — only annotated pages materialize, with no page
     index (0009 F7) — so a page the device left blank cannot be located and
     the positional mapping would misattribute later pages' ink. Refusing is
-    the safe outcome (ADR-0004). This *types* the failure ``decode_page_gray``
+    the safe outcome. This *types* the failure ``decode_page_gray``
     already surfaces as a bare ``IndexError``; it is not a structural
-    page-count guard on valid dense reads (which ADR-0004 declined) — a dense
+    page-count guard on valid dense reads (which the design deliberately
+    omits) — a dense
     mark decodes unchanged.
     """
 
@@ -129,7 +130,7 @@ def read_pages(
         gray = grays[page]
         cells = []
         for c in by_page.get(page, []):
-            # ADR-0008: the manifest's per-cell bands are authoritative; the
+            # The manifest's per-cell bands are authoritative; the
             # module-global defaults are only the fallback for a manifest that
             # predates the field, so a decode reads no decision global when the
             # bands are present.
@@ -175,13 +176,13 @@ def read_mark(
     indistinguishable by count. This decode therefore assumes a **dense**
     mark: every manifest page was annotated, so mark-page k lines up with
     compose-page k. Sparse multi-page marks (a page left entirely blank) are
-    an open problem — see ADR-0004. When a manifest page is absent from the
+    an open problem. When a manifest page is absent from the
     mark this refuses with :class:`SparseMarkError` rather than misattribute:
     the decode is eager over every manifest page, so a compose-generated
     manifest (which references *every* page via its command strip) can never
     return a reading before hitting the missing page. Correcting the mapping —
     not just detecting the gap — still needs positional page identity we don't
-    have (ADR-0004); this only makes the failure loud and typed.
+    have; this only makes the failure loud and typed.
     """
     if isinstance(manifest, Path):
         manifest = json.loads(manifest.read_text())
@@ -194,7 +195,7 @@ def read_mark(
             raise SparseMarkError(
                 f"manifest references page {p} but it is absent from "
                 f"{Path(mark_path).name} — a sparse mark (blank/missing page) "
-                f"can't be read positionally without misattributing ink (ADR-0004)"
+                f"can't be read positionally without misattributing ink"
             ) from e
     return read_pages(
         manifest, grays,

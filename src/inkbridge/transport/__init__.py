@@ -2,10 +2,10 @@
 
 Backends trade off between Cloud, Browse & Access, and USB. The private
 Cloud dialect is implemented; the ``Transport`` protocol + neutral errors
-(:mod:`inkbridge.transport.base`, ADR-0007) are the seam a second backend
+(:mod:`inkbridge.transport.base`) are the seam a second backend
 implements against.
 
-``connect`` is the transport connector — the zero-arg callable ADR-0006's
+``connect`` is the transport connector — the zero-arg callable the
 ``ops`` layer consumes and the CLI passes down. It is the *only* place the CLI
 touches a concrete backend, so a config-driven registry (named profiles, G6)
 drops in here without the commands changing.
@@ -21,7 +21,7 @@ __all__ = ["AuthError", "DirHandle", "MissingBytesError", "Transport", "connect"
 def connect() -> Transport:
     """Return a connected transport for the configured backend.
 
-    Zero-arg (ADR-0006's connector shape), invoked lazily by ``ops`` / the CLI
+    Zero-arg (the ops layer's connector shape), invoked lazily by ``ops`` / the CLI
     so a precondition failure never authenticates. ``PCClient.from_env`` is
     resolved at **call time** — not captured at import — so a test that
     monkeypatches ``from_env`` is honored and credentials read lazily; a missing

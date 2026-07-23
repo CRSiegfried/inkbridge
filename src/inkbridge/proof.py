@@ -1,4 +1,4 @@
-"""Device-free self-test (Analysis 0017 finding 8).
+"""Device-free self-test.
 
 Stamp synthetic ink into every manifest cell, run the readback decision over
 the synthetic mark, and assert every cell reads ANSWERED. No device, no
@@ -74,7 +74,7 @@ def stamp_pages(manifest: dict) -> dict:
 
 def proof(manifest: dict) -> ProofResult:
     """Stamp every cell, read it back, and collect any cell that does not
-    read ANSWERED (Analysis 0017 F8)."""
+    read ANSWERED."""
     grays = stamp_pages(manifest)
     readings = read_pages(manifest, grays)
     failures = [

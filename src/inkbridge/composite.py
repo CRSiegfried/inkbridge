@@ -1,4 +1,4 @@
-"""Capture compositing (Analysis 0012 finding 5): decoded ``.pdf.mark``
+"""Capture compositing: decoded ``.pdf.mark``
 ink overlaid on the rendered base PDF page at the device's note canvas
 resolution (the mark decode's own shape).
 

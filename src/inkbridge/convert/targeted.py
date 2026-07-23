@@ -11,14 +11,14 @@ from __future__ import annotations
 from pathlib import Path
 
 # Grayscale value below which a decoded pixel counts as ink. The decoded
-# .pdf.mark render is near-binary (see Analysis 0009): background is 255,
+# .pdf.mark render is near-binary: background is 255,
 # ink is 0, with only a thin anti-aliased skirt in between. Anything in
-# [0, 200) is treated as ink; the exact cutoff barely matters (Analysis
-# 0009 sensitivity sweep: coverage moves <0.02 pp for cutoffs 50..250).
+# [0, 200) is treated as ink; the exact cutoff barely matters (a
+# sensitivity sweep moves coverage <0.02 pp for cutoffs 50..250).
 INK_GRAY_CUTOFF = 200
 
 # Fraction-of-cell coverage above which region_has_ink returns True by
-# default. Empirically (Analysis 0009, real Manta fixtures) a true blank
+# default. Empirically (real Manta fixtures) a true blank
 # cell is exactly 0.000, a single stray dot is ~0.062%, a half-stroke is
 # ~0.19%, and the lightest deliberate answer (a checkmark) is ~0.49%.
 # 0.30% sits in the gap between the half-stroke and the lightest real
@@ -113,7 +113,7 @@ def region_has_ink(
     presence check for "was this cell answered", without full OCR/VLM.
 
     Presence-only cannot distinguish a legitimate light answer from a stray
-    or partial mark (Analysis 0009); ``threshold`` trades false-positives
+    or partial mark; ``threshold`` trades false-positives
     (stray dots) against false-negatives (faint/partial answers).
     """
     coverage = region_ink_coverage(

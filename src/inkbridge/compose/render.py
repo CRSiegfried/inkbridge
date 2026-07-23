@@ -1,4 +1,4 @@
-"""Row-grid renderer: block IR → PDF + manifest cells (Analysis 0012 F8–F9).
+"""Row-grid renderer: block IR → PDF + manifest cells.
 
 A single imperative pass deals blocks onto uniform 80 px rows top-to-bottom,
 drawing content and the footer command strip together and recording every

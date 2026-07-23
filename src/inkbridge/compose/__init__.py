@@ -1,6 +1,6 @@
 """Compose: markdown → row-grid PDF + input-area manifest (Phase 2.5).
 
-Design: Analysis 0012. The renderer emits the manifest as a byproduct of
+The renderer emits the manifest as a byproduct of
 rendering — every cell bbox is row arithmetic, and the manifest's
 `bbox_norm` values feed convert.targeted.region_has_ink unchanged on the
 readback side.
@@ -40,8 +40,8 @@ DENSITIES = {"normal": 1.0, "compact": 0.85, "dense": 0.72}
 
 
 def _stamp_decision_bands(cells: list[dict], profile) -> None:
-    """Write per-cell readback decision bands into each manifest cell (G1,
-    ADR-0008). The calibration bands are anchored to the tick box at scale 1.0
+    """Write per-cell readback decision bands into each manifest cell (G1).
+    The calibration bands are anchored to the tick box at scale 1.0
     (``A_ref``); a cell of bbox-pixel-area ``A_cell`` gets bands scaled by
     ``A_ref / A_cell``, holding the *absolute* ink threshold constant across
     cell sizes and densities (a deliberate mark is ~constant absolute ink, so

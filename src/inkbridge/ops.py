@@ -1,4 +1,4 @@
-"""In-process operations layer (ADR-0006): the orchestration that composes
+"""In-process operations layer: the orchestration that composes
 the primitives (`dispatch`, `answers`, `readback`, the transport client) for
 the three verbs an agent drives — dispatch, status, collect — reachable
 WITHOUT Click.
@@ -152,7 +152,7 @@ def status(connect, ledger, *, acknowledge):
 def collect(connect, ledger, doc_id, *, output_dir):
     """Pull ``doc_id``'s ``.pdf.mark``, resolve its answers against the compose
     manifest, and materialize the ``<doc>.answers.json`` sidecar under
-    ``output_dir`` (ADR-0003). Returns the ``collect.v1`` body. Does NOT mutate
+    ``output_dir``. Returns the ``collect.v1`` body. Does NOT mutate
     the ledger.
 
     Raises ``UnknownDocError`` (no such doc_id), ``NoManifestError`` (dispatched
