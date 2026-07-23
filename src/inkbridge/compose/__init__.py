@@ -78,8 +78,47 @@ def compose(
     boxes — leaving the canvas, margins, and chrome envelope device-fixed;
     manifest bboxes stay correct by construction (render.Renderer).
     """
-    from .profiles import PROFILES
     from .parser import parse
+
+    text = source.read_text() if isinstance(source, Path) else source
+    return _compose_blocks(
+        parse(text), output_pdf, manifest_path=manifest_path, doc_id=doc_id,
+        device=device, scale=scale, source_md5=hashlib.md5(text.encode()).hexdigest())
+
+
+def compose_from_ir(
+    blocks: list[dict],
+    output_pdf: Path,
+    manifest_path: Path | None = None,
+    doc_id: str | None = None,
+    device: str = "manta",
+    scale: float = 1.0,
+) -> ComposeResult:
+    """Compose from a block-IR list instead of Markdown (G3) — the structured
+    path an agent emits directly. Each element is a dict with a ``kind`` and its
+    fields (``{"kind": "choice", "label": …, "options": […]}``,
+    ``{"kind": "checkbox", "label": …}``, a registered custom
+    ``{"kind": "<name>", …}``, …). It builds the same block objects the Markdown
+    parser produces and runs the identical renderer, so IR and Markdown share one
+    rendering path."""
+    from .parser import block_from_ir
+
+    built = [block_from_ir(b) for b in blocks]
+    source_md5 = hashlib.md5(
+        json.dumps(blocks, sort_keys=True).encode()).hexdigest()
+    return _compose_blocks(
+        built, output_pdf, manifest_path=manifest_path, doc_id=doc_id,
+        device=device, scale=scale, source_md5=source_md5)
+
+
+def _compose_blocks(
+    built_blocks, output_pdf, *, manifest_path, doc_id, device, scale, source_md5,
+) -> ComposeResult:
+    """Shared tail: render already-built block objects to a PDF + manifest. Both
+    ``compose`` (Markdown) and ``compose_from_ir`` (IR) funnel through here so
+    the two front doors cannot drift in rendering, band-stamping, or manifest
+    shape."""
+    from .profiles import PROFILES
     from .render import Renderer, _slug
 
     try:
@@ -91,15 +130,12 @@ def compose(
     if scale <= 0:
         raise ValueError(f"scale must be positive, got {scale!r}")
 
-    text = source.read_text() if isinstance(source, Path) else source
     output_pdf = Path(output_pdf)
     manifest_path = Path(manifest_path) if manifest_path else output_pdf.with_suffix(".manifest.json")
-
-    source_md5 = hashlib.md5(text.encode()).hexdigest()
     doc_id = doc_id or f"{_slug(output_pdf.stem)}-{source_md5[:8]}"
 
     renderer = Renderer(output_pdf, profile, scale)
-    renderer.render(parse(text))
+    renderer.render(built_blocks)
     _stamp_decision_bands(renderer.cells, profile)
 
     manifest = {

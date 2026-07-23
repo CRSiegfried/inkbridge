@@ -130,7 +130,14 @@ def _resolve_choice(group_id: str, label: str, page: int,
 
 def _resolve_single(cell: CellReading) -> Answer:
     """Boolean (checkbox/ack) or presence (comb/capture, and any unknown type)
-    resolution for a one-cell question."""
+    resolution for a one-cell question. A registered custom cell type (G3) is
+    resolved by its own registered resolver — the answers seam that lets a new
+    type flow through without editing this core."""
+    from inkbridge.compose.celltypes import REGISTRY as _CELL_REGISTRY
+
+    spec = _CELL_REGISTRY.get(cell.type)
+    if spec is not None:
+        return spec.resolve(cell)
     if cell.decision is Decision.AMBIGUOUS:
         return Answer(cell.id, cell.type, cell.label, cell.page,
                       Status.NEEDS_REVIEW, cells=[cell.id])

@@ -18,6 +18,8 @@ from pathlib import Path
 
 from reportlab.pdfgen import canvas as rl_canvas
 
+from .celltypes import REGISTRY as CELL_REGISTRY
+from .celltypes import CustomBlock
 from .fonts import BODY, BOLD, BOLDITALIC, ITALIC, MONO, register_fonts, width_px
 from .geometry import BLACK, FAINT, GRAY, DeviceProfile, Px
 from .profiles import MANTA
@@ -340,6 +342,9 @@ class Renderer:
                               _QUOTE_FONTS),
                     g.content_x0 + self.u(100), size=self.u(11.0), bar=True,
                 )
+            elif isinstance(b, CustomBlock):
+                # G3 seam: a registered custom cell type draws itself.
+                CELL_REGISTRY[b.type].render(self, b)
             elif isinstance(b, Rule):
                 self._rule()
             elif isinstance(b, Placeholder):

@@ -300,3 +300,35 @@ def parse(text: str) -> list:
         else:
             i += 1
     return blocks
+
+
+def block_from_ir(spec: dict):
+    """Build one block object from a block-IR dict (G3) — the structured
+    alternative to Markdown. Built-in kinds map to their dataclasses; a kind
+    registered in the cell-type registry becomes a ``CustomBlock``; an unknown
+    kind is a ``ValueError``."""
+    from .celltypes import CustomBlock, is_registered
+
+    kind = spec.get("kind")
+    if kind == "heading":
+        return Heading(int(spec.get("level", 1)), spec.get("text", ""))
+    if kind in ("paragraph", "text"):
+        return Paragraph(spec.get("text", ""))
+    if kind == "listitem":
+        return ListItem(spec.get("text", ""), int(spec.get("depth", 0)),
+                        spec.get("marker", "•"))
+    if kind == "checkbox":
+        return Checkbox(spec["label"], int(spec.get("depth", 0)))
+    if kind == "ack":
+        return Ack(spec["label"])
+    if kind == "choice":
+        return Choice(spec["label"], list(spec.get("options", [])))
+    if kind == "capture":
+        return Capture(spec["label"], int(spec.get("rows", 7)))
+    if kind == "comb":
+        return Comb(spec["label"], int(spec.get("n", 8)))
+    if kind == "rule":
+        return Rule()
+    if is_registered(kind):
+        return CustomBlock(type=kind, label=spec.get("label", ""), ir=spec)
+    raise ValueError(f"unknown IR block kind {kind!r}")

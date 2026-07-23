@@ -388,3 +388,63 @@ def test_cli_compose_json_invalid_source_is_error(tmp_path):
     assert res.exit_code == 1
     assert res.stdout == ""  # --json keeps stdout pure; the error is on stderr
     assert json.loads(res.stderr)["error"]["code"] == "invalid_source"
+
+
+# -- G3: block-IR entry point + cell-type registry -------------------------
+
+def test_compose_from_block_ir_and_cell_type_registry(tmp_path):
+    """G3: a document builds from an IR dict (no Markdown) and renders, and a
+    newly registered cell type flows compose->readback->answers with no edit to
+    the render/answers/readback core."""
+    import numpy as np
+
+    from inkbridge.answers import Answer, Status, resolve_answers
+    from inkbridge.compose import compose_from_ir
+    from inkbridge.compose.celltypes import REGISTRY, register
+    from inkbridge.readback import read_mark
+
+    # Register a brand-new cell type entirely from the test — nothing in the
+    # core knows "stamp". render reuses the tick-box drawer; resolve is boolean.
+    def _render_stamp(renderer, block):
+        renderer._checkbox(block.label, 0, "stamp")
+
+    def _resolve_stamp(cell):
+        given = cell.decision.value == "answered"
+        return Answer(cell.id, cell.type, cell.label, cell.page,
+                      Status.ANSWERED, value=given)
+
+    register("stamp", render=_render_stamp, resolve=_resolve_stamp)
+    try:
+        # (a) Build a document from a pure IR list — no Markdown anywhere.
+        ir = [
+            {"kind": "heading", "level": 1, "text": "Order"},
+            {"kind": "choice", "label": "size", "options": ["S", "M", "L"]},
+            {"kind": "checkbox", "label": "giftwrap"},
+            {"kind": "stamp", "label": "approved"},          # the custom type
+        ]
+        res = compose_from_ir(ir, tmp_path / "form.pdf", device="manta")
+        assert any(c["type"] == "choice" for c in res.cells)
+        assert any(c["type"] == "checkbox" for c in res.cells)
+        stamp_cell = next(c for c in res.cells if c["type"] == "stamp")  # rendered!
+        assert "bands" in stamp_cell  # went through the same band-stamping tail
+
+        # (b) readback (type-agnostic) + answers (registry-resolved) end-to-end.
+        manifest = json.loads(res.manifest_path.read_text())
+        H, W = manifest["canvas"]["height"], manifest["canvas"]["width"]
+
+        class ArrayDecoder:
+            def page_gray(self, page):
+                gray = np.full((H, W), 255, dtype=np.uint8)
+                x, y, w, h = stamp_cell["bbox_norm"]  # ink the stamp cell
+                x0, y0 = int(x * W), int(y * H)
+                x1, y1 = int((x + w) * W), int((y + h) * H)
+                gray[y0:y1, x0:x1] = 0
+                return gray
+
+        readings = read_mark(manifest, decoder=ArrayDecoder())
+        answers = {a.id: a for a in resolve_answers(readings)}
+        stamp_answer = answers[stamp_cell["id"]]
+        assert stamp_answer.type == "stamp"              # resolved by the registry
+        assert stamp_answer.status is Status.ANSWERED and stamp_answer.value is True
+    finally:
+        REGISTRY.pop("stamp", None)
