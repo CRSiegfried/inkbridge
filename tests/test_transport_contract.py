@@ -12,6 +12,8 @@ for any other backend.
 from __future__ import annotations
 
 import hashlib
+import tempfile
+from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -19,6 +21,7 @@ import pytest
 from fake_cloud import FakeServer
 
 from inkbridge.transport import AuthError, MissingBytesError, Transport
+from inkbridge.transport.local_folder import LocalFolder
 from inkbridge.transport.private_cloud import PCClient
 
 
@@ -30,8 +33,16 @@ def _private_cloud_backend() -> SimpleNamespace:
     return SimpleNamespace(name="private_cloud", client=client, server=server)
 
 
-# Every registered backend runs the same suite. Add LocalFolder here for D3.
-BACKENDS = {"private_cloud": _private_cloud_backend}
+def _local_folder_backend() -> SimpleNamespace:
+    root = Path(tempfile.mkdtemp())
+    (root / "Document").mkdir()
+    (root / "Document" / "Projects").mkdir()
+    return SimpleNamespace(name="local_folder", client=LocalFolder(root), server=None)
+
+
+# Every registered backend runs the same suite (D3: LocalFolder proves the seam).
+BACKENDS = {"private_cloud": _private_cloud_backend,
+            "local_folder": _local_folder_backend}
 
 
 @pytest.fixture(params=list(BACKENDS))
@@ -130,6 +141,33 @@ def test_ls_row_shape_and_resolve_compose(backend, tmp_path):
 def test_resolve_missing_folder_is_filenotfound(backend):
     with pytest.raises(FileNotFoundError):
         backend.client.resolve_dir("NoSuchFolder")
+
+
+# -- D3: LocalFolder is genuinely network-free --------------------------------
+
+def test_local_folder_uses_no_network(tmp_path, monkeypatch):
+    # The whole point of the local backend is zero network: block httpx at the
+    # transport layer and prove a full push/pull/ls/delete cycle still works.
+    def _boom(*a, **k):
+        raise AssertionError("LocalFolder made a network call")
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", _boom)
+    monkeypatch.setattr(httpx.Client, "send", _boom)
+
+    root = tmp_path / "store"
+    (root / "Document").mkdir(parents=True)
+    fs = LocalFolder(root)
+
+    data = b"%PDF-local"
+    info = fs.push(_write(tmp_path, "doc.pdf", data), "Document")
+    assert info == {"md5": hashlib.md5(data).hexdigest(), "size": len(data),
+                    "folder": "Document", "name": "doc.pdf"}
+    rows = fs.ls(fs.resolve_dir("Document"))
+    assert any(r["fileName"] == "doc.pdf" and r["isFolder"] == "N" for r in rows)
+    dest = tmp_path / "back" / "doc.pdf"
+    assert fs.pull("Document", "doc.pdf", dest)["match"] is True
+    assert dest.read_bytes() == data
+    assert fs.delete("Document", ["doc.pdf"]) == ["doc.pdf"]
 
 
 def _write(tmp_path, name, data):
