@@ -161,12 +161,28 @@ class PCClient:
         _log.info("logged in to %s", self.api)
 
     def ls(self, directory_id: int = 0) -> list[dict]:
-        data = self._call(
-            "/file/list/query",
-            {"directoryId": directory_id, "pageNo": 1, "pageSize": 100,
-             "order": "time", "sequence": "desc"},
-        )
-        return data["userFileVOList"]
+        """List a directory in full, following pagination to exhaustion.
+
+        The listing endpoint pages at ``pageSize``; a lone ``pageNo=1`` query
+        silently truncates a folder of more than 100 items, which would make
+        ``find``, ``check_entries``, and push's post-upload verify treat a
+        present file as missing. Fetch successive pages until one comes back
+        short of a full page.
+        """
+        page_size = 100
+        items: list[dict] = []
+        page_no = 1
+        while True:
+            data = self._call(
+                "/file/list/query",
+                {"directoryId": directory_id, "pageNo": page_no,
+                 "pageSize": page_size, "order": "time", "sequence": "desc"},
+            )
+            batch = data["userFileVOList"]
+            items.extend(batch)
+            if len(batch) < page_size:
+                return items
+            page_no += 1
 
     def resolve_dir(self, folder: str) -> int:
         """Directory id for a folder path — ``"Document"`` or nested like

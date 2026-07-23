@@ -10,6 +10,7 @@ import httpx
 import pytest
 from fake_cloud import DOC_DIR_ID, SUB_DIR_ID, TOKEN, FakeServer
 
+from inkbridge.dispatch import check_entries
 from inkbridge.transport.private_cloud import (
     AuthError,
     MissingBytesError,
@@ -193,6 +194,30 @@ def test_signed_query_survives_extra_params(client: PCClient, server: FakeServer
     f.write_bytes(b"x")
     client.push(f, "Document")
     assert {"signature", "timestamp", "nonce", "path", "innerName"} <= set(seen)
+
+
+def test_ls_paginates_beyond_100(client: PCClient, server: FakeServer):
+    # A folder with >100 items must come back whole. A single pageNo=1 query
+    # caps at pageSize=100, so anything past #100 (here doc100..doc149) would
+    # be invisible — making find/check_entries/push-verify call it missing.
+    for i in range(150):
+        name = f"doc{i:03d}.pdf"
+        server.rows[name] = server.row(name, f"{i:032d}", 10, f"id-{name}")
+
+    names = {r["fileName"] for r in client.ls(DOC_DIR_ID)}
+    assert {f"doc{i:03d}.pdf" for i in range(150)} <= names  # every file, not page 1 only
+    assert "doc149.pdf" in names  # a file that lives on page 2
+
+    # the 0011 join sits on ls(): a page-2 doc must read as waiting, not missing.
+    entry = {
+        "doc_id": "d149",
+        "remote": {"folder": "Document", "name": "doc149.pdf"},
+        "base_md5": f"{149:032d}",
+        "mark_md5": None,
+    }
+    (result,) = check_entries([entry], client)
+    assert result["state"] == "waiting"      # base found past #100, no mark yet
+    assert result["base_changed"] is False
 
 
 def test_env_reads_dotenv_file(tmp_path: Path, monkeypatch):

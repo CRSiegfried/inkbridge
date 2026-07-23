@@ -68,7 +68,11 @@ class FakeServer:
                 rows = list(self.dirs[body["directoryId"]].values())
             else:
                 rows = []
-            return ok({"userFileVOList": rows})
+            # Honor pagination the way the real endpoint does, so a >pageSize
+            # folder comes back across multiple pages (drives the ls() paging).
+            page_no, page_size = body.get("pageNo", 1), body.get("pageSize", 100)
+            start = (page_no - 1) * page_size
+            return ok({"userFileVOList": rows[start:start + page_size]})
 
         if path == "/api/file/upload/apply":
             body = json.loads(request.content)
