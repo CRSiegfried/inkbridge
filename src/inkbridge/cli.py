@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -210,26 +211,54 @@ def compose(source: Path, output: Path | None, manifest_path: Path | None,
 
 @main.command()
 @click.argument("remote_paths", nargs=-1, required=True)
-@click.confirmation_option(
-    "-y", "--yes",
-    prompt="Delete these files from the private cloud (and, on sync, the device)?")
-def rm(remote_paths: tuple[str, ...]) -> None:
-    """Delete files from the private cloud (e.g. Document/f.pdf)."""
+@click.option("-y", "--yes", "yes", is_flag=True,
+              help="Confirm the deletion non-interactively (required under --json "
+                   "or when stdin is not a TTY).")
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def rm(remote_paths: tuple[str, ...], yes: bool, as_json: bool) -> None:
+    """Delete files from the private cloud (e.g. Document/f.pdf).
+
+    Destructive, so it needs confirmation — but never by blocking on stdin
+    (CT2): an agent that omits ``-y`` under ``--json`` or a non-TTY stdin gets a
+    typed ``confirmation_required`` exit (6), not a hung prompt. Only an
+    interactive human (a TTY, human mode) is prompted. Pass ``-y``/``--yes`` to
+    delete non-interactively.
+    """
     from inkbridge import transport
+    from inkbridge.contract import CliError, Exit, emit_result
+
+    if not yes:
+        interactive = sys.stdin.isatty() and not as_json
+        if not interactive:
+            raise CliError(
+                "refusing to delete without confirmation: pass -y/--yes "
+                "(no interactive prompt under --json or a non-TTY stdin)",
+                code="confirmation_required", exit_status=Exit.PRECONDITION,
+                as_json=as_json)
+        if not click.confirm(
+                "Delete these files from the private cloud (and, on sync, "
+                "the device)?"):
+            raise click.Abort()
 
     by_folder: dict[str, list[str]] = {}
     for rp in remote_paths:
         folder, name = _split_remote(rp)
         by_folder.setdefault(folder, []).append(name)
-    with _cloud_errors():
+    deleted_all: list[str] = []
+    with _cloud_errors(as_json):
         client = transport.connect()
         for folder, names in by_folder.items():
             try:
                 deleted = client.delete(folder, names)
             except FileNotFoundError as e:
-                raise click.ClickException(str(e)) from e
+                raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                               as_json=as_json) from e
             for name in deleted:
-                click.echo(f"Deleted {folder}/{name}")
+                deleted_all.append(f"{folder}/{name}")
+                if not as_json:
+                    click.echo(f"Deleted {folder}/{name}")
+    if as_json:
+        emit_result({"deleted": deleted_all}, "rm.v1")
 
 
 _LEDGER_OPT = click.option(
