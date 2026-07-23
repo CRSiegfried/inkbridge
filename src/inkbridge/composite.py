@@ -20,13 +20,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from inkbridge.compose.profiles import MANTA
 from inkbridge.convert.targeted import (
     INK_GRAY_CUTOFF,
     _bbox_to_pixels,
     decode_page_gray,
 )
 
-CANVAS_W, CANVAS_H = 1920, 2560  # Manta default; composite_page follows the mark
+# Default base-render canvas — the Manta note canvas. composite_page follows the
+# mark decode's own shape, so this default is only for a bare render_base_page
+# call; it comes from the device profile, never a hardcoded literal here.
+CANVAS_W, CANVAS_H = MANTA.canvas_w, MANTA.canvas_h
 
 
 def render_base_page(pdf_path: Path, page_number: int,

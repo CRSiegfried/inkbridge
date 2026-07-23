@@ -14,7 +14,7 @@ import json
 import pytest
 
 from inkbridge.compose import compose
-from inkbridge.compose.geometry import MANTA, PROFILES
+from inkbridge.compose.profiles import MANTA, PROFILES
 from inkbridge.compose.parser import (
     Ack,
     Capture,

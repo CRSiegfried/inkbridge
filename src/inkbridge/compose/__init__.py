@@ -78,7 +78,7 @@ def compose(
     boxes — leaving the canvas, margins, and chrome envelope device-fixed;
     manifest bboxes stay correct by construction (render.Renderer).
     """
-    from .geometry import PROFILES
+    from .profiles import PROFILES
     from .parser import parse
     from .render import Renderer, _slug
 

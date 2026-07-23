@@ -153,7 +153,7 @@ def test_thresholds_from_manifest_two_cell_sizes():
     # compose's per-cell manifest bands both decode ANSWERED; a single global
     # fraction band would mis-decide the large cell.
     from inkbridge.compose import _stamp_decision_bands
-    from inkbridge.compose.geometry import MANTA
+    from inkbridge.compose.profiles import MANTA
 
     small = [0.10, 0.10, 0.03, 0.03]   # ~4.4k px² tick
     big = [0.10, 0.30, 0.30, 0.30]     # ~442k px² area — 100× larger

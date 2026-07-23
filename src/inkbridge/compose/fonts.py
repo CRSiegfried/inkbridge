@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .geometry import SCALE
+from .geometry import PT_PER_PX
 
 BODY = "InkVera"
 BOLD = "InkVera-Bold"
@@ -47,4 +47,4 @@ def width_px(text: str, font: str, size_pt: float) -> float:
     """Rendered width of text in device pixels."""
     from reportlab.pdfbase import pdfmetrics
 
-    return pdfmetrics.stringWidth(text, font, size_pt) / SCALE
+    return pdfmetrics.stringWidth(text, font, size_pt) / PT_PER_PX

@@ -19,7 +19,8 @@ from pathlib import Path
 from reportlab.pdfgen import canvas as rl_canvas
 
 from .fonts import BODY, BOLD, BOLDITALIC, ITALIC, MONO, register_fonts, width_px
-from .geometry import BLACK, FAINT, GRAY, MANTA, ROW, DeviceProfile, Px
+from .geometry import BLACK, FAINT, GRAY, DeviceProfile, Px
+from .profiles import MANTA
 from .parser import (
     Ack,
     Capture,
@@ -199,7 +200,7 @@ class Renderer:
         # tickable glyph boxes shrink too, a new scale wants an on-device
         # preview to confirm pen ergonomics and ink isolation (glyph_pad).
         self.s = scale
-        self.row_h = ROW * scale
+        self.row_h = profile.row_h * scale
         self.content_top = profile.content_top * scale
         self.glyph_box = profile.glyph_box * scale
         self.glyph_pad = profile.glyph_pad * scale

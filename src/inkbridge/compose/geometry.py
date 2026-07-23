@@ -1,19 +1,19 @@
-"""Row-grid page geometry for the compose renderer.
+"""Row-grid page geometry for the compose renderer — the device-independent
+engine. Concrete panels live in ``profiles.py``.
 
-Everything is drawn in device-pixel, top-left-origin coordinates on the
-target device's note canvas; the PDF page is the same sheet at 1 pt = 4
-device px (3:4 aspect on every supported model). Input-area bboxes are
-arithmetic over these constants — coordinates are inputs to the renderer,
-never recovered from layout output — so a manifest bbox is correct by
+Everything is drawn in device-pixel, top-left-origin coordinates on the target
+device's note canvas; the PDF page is the same sheet at ``pt_per_px`` pt per
+device pixel (1 pt = 4 px by default), whatever the canvas aspect. Input-area
+bboxes are arithmetic over the profile's fields — coordinates are inputs to the
+renderer, never recovered from layout output — so a manifest bbox is correct by
 construction once the raster round-trip test pins the page-to-canvas scale.
 
-Device profiles: every supported Supernote panel is ~300 PPI, so a device
-pixel is a fixed physical distance and the shared design constants (row
-height, glyph boxes, margins) carry across models unchanged — same physical
-ergonomics for the hand holding the pen. Only the canvas size and the
-chrome envelope (what the reader UI clips at the bottom of the screen) are
-per-device, and the envelope is *measured* only where we've run the inked
-ruler fixture on real hardware (`chrome_calibrated`).
+A :class:`DeviceProfile` carries the panel's canvas size, PPI, pt→px scale, and
+chrome envelope; the shared design sizes (row height, glyph boxes, margins) are
+physical, so they carry across ~300 PPI panels — ``row_h`` derives from a
+physical millimetre target and the profile's PPI rather than a fixed pixel
+count. Nothing here is Manta-specific, so a synthetic non-Manta profile
+(different PPI or aspect) composes with no module constant to patch.
 """
 
 from __future__ import annotations
@@ -22,18 +22,31 @@ from dataclasses import dataclass
 
 from reportlab.lib.colors import Color, black
 
-SCALE = 0.25  # 1 pt = 4 device px, fixed across profiles (fonts.py depends on it)
+# The pt→px scale is a rendering convention (1 pt = 4 device px), not a device
+# geometry constant, so it defaults the same on every profile; it lives on
+# DeviceProfile (a profile could override it) with this module default reused by
+# the profile-free text measurement in fonts.py.
+PT_PER_PX = 0.25
 
-ROW = 80  # base grid row height, device px (~300 PPI: a physical size)
+# Physical millimetre target for one grid row. row_h is derived from this and
+# the profile's PPI, so the row is the same physical size on any panel (~6.8 mm
+# → 80 px at ~300 PPI) rather than a fixed pixel count that would shrink on a
+# denser screen.
+ROW_MM = 6.8
+MM_PER_INCH = 25.4
 
 
 @dataclass(frozen=True)
 class DeviceProfile:
-    """Canvas size and chrome envelope for one Supernote model."""
+    """Canvas size, pixel density, and chrome envelope for one panel. Everything
+    the renderer needs is derived from these fields, so a non-Manta profile
+    (different PPI or aspect) composes correctly with no module-scope constant to
+    patch — the concrete device instances live in ``profiles.py``."""
 
     name: str
     canvas_w: int
     canvas_h: int
+    ppi: float  # pixel density; row height and any physical size derive from it
     # Footer command strip / chrome envelope, absolute canvas y (top-origin).
     strip_top: int
     side_safe_bottom: int
@@ -45,8 +58,11 @@ class DeviceProfile:
     # True only when the envelope came from the on-device ruler fixture.
     chrome_calibrated: bool
 
-    # Shared design constants — physical sizes, identical across ~300 PPI
-    # panels. Overridable per-profile but expected to stay put.
+    # Rendering + design constants. pt_per_px is the pt→px scale; row_mm the
+    # physical row target (row_h derives from it and ppi). The glyph/margin
+    # sizes are physical, ~identical across ~300 PPI panels, overridable.
+    pt_per_px: float = PT_PER_PX
+    row_mm: float = ROW_MM
     margin_x: int = 130
     content_top: int = 160
     glyph_box: int = 90  # tickable printed box (checkbox/ack/choice)
@@ -54,12 +70,18 @@ class DeviceProfile:
     trigger_box: int = 64  # page-level AI-parse trigger, centered per page
 
     @property
+    def row_h(self) -> int:
+        """Grid row height in device px, derived from the physical row target
+        and this profile's PPI (so it is the same physical size on any panel)."""
+        return round(self.row_mm / MM_PER_INCH * self.ppi)
+
+    @property
     def page_w_pt(self) -> float:
-        return self.canvas_w * SCALE
+        return self.canvas_w * self.pt_per_px
 
     @property
     def page_h_pt(self) -> float:
-        return self.canvas_h * SCALE
+        return self.canvas_h * self.pt_per_px
 
     @property
     def content_x0(self) -> int:
@@ -76,7 +98,7 @@ class DeviceProfile:
     @property
     def rows_per_page(self) -> int:
         # Content stops 40 px above the command strip.
-        return (self.strip_top - 40 - self.content_top) // ROW
+        return (self.strip_top - 40 - self.content_top) // self.row_h
 
     @property
     def trigger_center_x0(self) -> int:
@@ -95,51 +117,6 @@ class DeviceProfile:
         ]
 
 
-# Manta (A5 X2, 10.7", 1920x2560 hardware-confirmed). Chrome envelope
-# measured with the inked ruler fixture (2026-07-20): the reader UI clips
-# the bottom *corners* — on the sides the lowest fully visible ruler line
-# is y=2440 (x~460) — while the center-bottom stays visible to at least
-# y=2540 (x~930). So side content must clear side_safe_bottom, and only
-# the center_x0..center_x1 band may use the deeper center_safe_bottom.
-# Corner registration ticks are exempt (compositing-only marks, never
-# meant to be read on screen).
-MANTA = DeviceProfile(
-    name="manta",
-    canvas_w=1920,
-    canvas_h=2560,
-    strip_top=2340,
-    side_safe_bottom=2420,
-    center_safe_bottom=2520,
-    center_x0=640,
-    center_x1=1280,
-    chrome_calibrated=True,
-)
-
-# Nomad (A6 X2, 7.8"). ASSUMED, no device on hand — community-documented
-# 1404x1872 canvas (same 3:4 aspect, ~300 PPI; note this is the figure that
-# was *refuted as the Manta canvas*, so don't cross-wire the two). Chrome
-# envelope assumptions, pending an on-device ruler fixture:
-#   - same px distances from the bottom edge as the Manta measured (same
-#     reader app, same PPI → chrome should be the same physical height):
-#     strip_top/side_safe/center_safe = canvas_h - 220/140/40;
-#   - center-visible band scaled by width about the centerline
-#     (Manta ±320 of 1920 → ±234 of 1404).
-# Anything read back from a real Nomad should replace these numbers and
-# flip chrome_calibrated.
-NOMAD = DeviceProfile(
-    name="nomad",
-    canvas_w=1404,
-    canvas_h=1872,
-    strip_top=1872 - 220,
-    side_safe_bottom=1872 - 140,
-    center_safe_bottom=1872 - 40,
-    center_x0=702 - 234,
-    center_x1=702 + 234,
-    chrome_calibrated=False,
-)
-
-PROFILES = {p.name: p for p in (MANTA, NOMAD)}
-
 BLACK = black
 GRAY = Color(0.55, 0.55, 0.55)
 FAINT = Color(0.78, 0.78, 0.78)
@@ -151,23 +128,24 @@ class Px:
     def __init__(self, c, profile: DeviceProfile):
         self.c = c
         self.h = profile.canvas_h
+        self.s = profile.pt_per_px  # pt→px scale for this profile
 
     def rect(self, x, y, w, h, lw=3.0, stroke=BLACK):
-        self.c.setLineWidth(lw * SCALE)
+        self.c.setLineWidth(lw * self.s)
         self.c.setStrokeColor(stroke)
-        self.c.rect(x * SCALE, (self.h - y - h) * SCALE, w * SCALE, h * SCALE, stroke=1, fill=0)
+        self.c.rect(x * self.s, (self.h - y - h) * self.s, w * self.s, h * self.s, stroke=1, fill=0)
 
     def line(self, x0, y0, x1, y1, lw=2.0, stroke=BLACK, dash=None):
-        self.c.setLineWidth(lw * SCALE)
+        self.c.setLineWidth(lw * self.s)
         self.c.setStrokeColor(stroke)
         self.c.setDash(*dash) if dash else self.c.setDash()
-        self.c.line(x0 * SCALE, (self.h - y0) * SCALE, x1 * SCALE, (self.h - y1) * SCALE)
+        self.c.line(x0 * self.s, (self.h - y0) * self.s, x1 * self.s, (self.h - y1) * self.s)
         self.c.setDash()
 
     def text(self, x, baseline_y, s, size_pt, font, fill=BLACK):
         self.c.setFont(font, size_pt)
         self.c.setFillColor(fill)
-        self.c.drawString(x * SCALE, (self.h - baseline_y) * SCALE, s)
+        self.c.drawString(x * self.s, (self.h - baseline_y) * self.s, s)
 
     def bracket(self, x, y, dx, dy, arm=60, lw=4.0):
         """L-bracket at corner (x, y); dx/dy = +1/-1 point the arms inward."""
