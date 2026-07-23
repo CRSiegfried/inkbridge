@@ -87,13 +87,13 @@ def test_push_to_missing_folder_is_filenotfound(backend, tmp_path):
         backend.client.push(_write(tmp_path, "x.pdf", b"x"), "Nonexistent")
 
 
-# NB: duplicate-push → FileExistsError is a real contract element (the private
-# cloud has no overwrite; dispatch maps it to already_exists), but it depends on
-# the server's E0322-at-apply behavior, which fake_cloud does not model — a
-# re-push simply overwrites. Asserting it here against a permissive substrate
-# would be a false contract; strengthening fake_cloud to refuse re-push is A4's
-# territory (dispatch idempotency / --replace), and this assertion belongs with
-# it. Kept out of the neutral suite deliberately.
+def test_duplicate_push_is_fileexists(backend, tmp_path):
+    # The private cloud has no overwrite: a same-name re-push is refused
+    # (E0322 → FileExistsError), which is what dispatch --replace exists to work
+    # around (A4). fake_cloud models the refusal as of A4.
+    _push_tmp(backend, tmp_path)
+    with pytest.raises(FileExistsError):
+        backend.client.push(_write(tmp_path, "doc.pdf", b"%PDF-roundtrip"), "Document")
 
 
 def test_pull_absent_is_filenotfound(backend, tmp_path):

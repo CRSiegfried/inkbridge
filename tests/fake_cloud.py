@@ -76,6 +76,12 @@ class FakeServer:
 
         if path == "/api/file/upload/apply":
             body = json.loads(request.content)
+            # The real cloud has no overwrite: a same-name re-push is refused at
+            # apply time with E0322 (observed live 2026-07-20). Modeling it here
+            # is what makes dispatch's non-idempotency real and --replace
+            # (delete-then-push) actually necessary (A4).
+            if body["fileName"] in self.dirs.get(body["directoryId"], {}):
+                return fail("E0322", "file already exists")
             return ok({
                 "fullUploadUrl": "http://cloud.test/api/oss/upload"
                                  "?signature=SIG&timestamp=1&nonce=N&path=P",

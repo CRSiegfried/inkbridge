@@ -332,22 +332,26 @@ _LEDGER_OPT = click.option(
               type=click.Path(exists=True, path_type=Path), default=None,
               help="Compose manifest for FILE [default: FILE's sibling "
                    ".manifest.json, when present].")
+@click.option("--replace", is_flag=True,
+              help="Delete any existing remote copy first, then push (idempotent "
+                   "re-dispatch — the private cloud has no overwrite, so a plain "
+                   "re-dispatch would fail 'already exists').")
 @_LEDGER_OPT
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
 def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
-             ledger_path: Path | None, as_json: bool) -> None:
+             replace: bool, ledger_path: Path | None, as_json: bool) -> None:
     """Push FILE and record it in the dispatch ledger as awaiting a
     response — the .pdf.mark sidecar the device syncs back once inked.
     'inkbridge status' polls for it; 'inkbridge collect' reads it back.
 
     Contract-compliant (ADR-0002): the --json result is a dispatch.v1 document
     carrying the recorded doc_id, remote location, cell counts, and ledger
-    path. Exit 4 when the remote folder does not exist, 5 auth, 6 unreachable.
+    path. Exit 4 when the remote folder does not exist, 1 already_exists (use
+    --replace to re-dispatch idempotently), 5 auth, 6 unreachable.
     """
-    from inkbridge import ops
+    from inkbridge import ops, transport
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge import transport
 
     if manifest_path is None:
         sibling = file.with_suffix(".manifest.json")
@@ -357,7 +361,7 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
         try:
             payload = ops.dispatch(transport.connect, ledger, file,
                                    remote_folder=remote_folder,
-                                   manifest_path=manifest_path)
+                                   manifest_path=manifest_path, replace=replace)
         except FileNotFoundError as e:
             raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
                            as_json=as_json) from e
@@ -374,6 +378,52 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     click.echo(
         f"Dispatched {file} -> {payload['remote']['folder']}/{payload['remote']['name']} "
         f"(doc_id {payload['doc_id']}, {detail}); ledger: {payload['ledger']}")
+
+
+@main.command()
+@click.argument("remote_path")
+@click.option("--manifest", "manifest_path",
+              type=click.Path(exists=True, path_type=Path), default=None,
+              help="Compose manifest for the adopted file (so 'collect' can "
+                   "resolve its ink); without it the doc is tracked for arrival "
+                   "only.")
+@_LEDGER_OPT
+@click.option("--json", "as_json", is_flag=True, help="Machine-readable output.")
+def reconcile(remote_path: str, manifest_path: Path | None,
+              ledger_path: Path | None, as_json: bool) -> None:
+    """Adopt an orphaned remote file into the ledger: a file present on the
+    cloud (e.g. REMOTE_PATH = Document/f.pdf) with no ledger entry — a dispatch
+    that pushed then crashed before saving, or a file pushed out of band — so
+    'status'/'collect' can track it again.
+
+    Contract (ADR-0002): the --json result is a reconcile.v1 document with the
+    recorded doc_id, remote, base_md5, and ledger path. Exit 3 when the file is
+    already tracked (not an orphan), 4 when no such remote file exists, 5 auth,
+    6 unreachable.
+    """
+    from inkbridge import ops, transport
+    from inkbridge.contract import CliError, Exit, emit_result
+    from inkbridge.dispatch import Ledger
+
+    folder, name = _split_remote(remote_path)
+    ledger = Ledger(ledger_path)
+    with _cloud_errors(as_json):
+        try:
+            payload = ops.reconcile(transport.connect, ledger, folder, name,
+                                    manifest_path=manifest_path)
+        except ops.AlreadyTrackedError as e:
+            raise CliError(str(e), code="already_tracked",
+                           exit_status=Exit.NO_CHANGE, as_json=as_json) from e
+        except FileNotFoundError as e:
+            raise CliError(str(e), code="not_found", exit_status=Exit.NOT_FOUND,
+                           as_json=as_json) from e
+    if as_json:
+        emit_result(payload, "reconcile.v1")
+        return
+    click.echo(
+        f"Reconciled {payload['remote']['folder']}/{payload['remote']['name']} "
+        f"-> doc_id {payload['doc_id']} (base md5 {payload['base_md5']}); "
+        f"ledger: {payload['ledger']}")
 
 
 @main.command()

@@ -86,6 +86,9 @@ def _argv(env, cmd: str) -> list[str]:
         "rm": ["rm", "Document/sampler_form.pdf", "-y", "--json"],
         "dispatch": ["dispatch", str(env.src), "--manifest", str(env.sampler_manifest),
                      "--ledger", str(env.tmp / "disp.json"), "--json"],
+        "reconcile": ["reconcile", "Document/sampler_form.pdf",
+                      "--manifest", str(env.sampler_manifest),
+                      "--ledger", str(env.tmp / "recon.json"), "--json"],
         "status": ["status", "--ledger", str(env.ledger), "--json"],
         "collect": ["collect", "sampler-collect", "--ledger", str(env.ledger),
                     "-o", str(out), "--json"],
@@ -106,8 +109,8 @@ def _argv(env, cmd: str) -> list[str]:
 # The full command surface. If a command is added, add it here — the point of
 # this test is that NO command is off the contract.
 ALL_COMMANDS = [
-    "doctor", "ls", "push", "pull", "rm", "dispatch", "status", "collect",
-    "readback", "answers", "composite", "proof", "merge", "compose",
+    "doctor", "ls", "push", "pull", "rm", "dispatch", "reconcile", "status",
+    "collect", "readback", "answers", "composite", "proof", "merge", "compose",
 ]
 
 

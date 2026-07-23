@@ -218,6 +218,73 @@ def test_entry_without_manifest_never_pretends_cells(client: PCClient,
         Path(entry["manifest"])  # None is not a path — the CLI checks first
 
 
+def test_replace_is_idempotent(client: PCClient, tmp_path: Path):
+    # A4: the private cloud has no overwrite, so a plain re-dispatch of an
+    # already-present doc fails 'already exists'; --replace (delete-then-push)
+    # makes it succeed and leaves exactly one remote copy + one ledger entry.
+    from inkbridge import ops
+
+    connect = lambda: client  # noqa: E731
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    manifest_path = tmp_path / "form.manifest.json"
+    manifest_path.write_text(json.dumps(MANIFEST))
+    ledger = Ledger(tmp_path / "ledger.json")
+
+    ops.dispatch(connect, ledger, f, remote_folder="Document",
+                 manifest_path=manifest_path)
+    # A second plain dispatch is refused (no overwrite).
+    with pytest.raises(FileExistsError):
+        ops.dispatch(connect, ledger, f, remote_folder="Document",
+                     manifest_path=manifest_path)
+    # With --replace it succeeds and stays single-copy / single-entry.
+    ops.dispatch(connect, ledger, f, remote_folder="Document",
+                 manifest_path=manifest_path, replace=True)
+    rows = [r for r in client.ls(client.resolve_dir("Document"))
+            if r["fileName"] == "form.pdf"]
+    assert len(rows) == 1
+    assert [e["remote"] for e in Ledger(ledger.path).entries] == [
+        {"folder": "Document", "name": "form.pdf"}]
+
+
+def test_reconcile_adopts_orphan(client: PCClient, tmp_path: Path):
+    # A4: a remote file with no ledger entry (a dispatch that pushed then
+    # crashed before saving) is re-adopted into the ledger by reconcile.
+    from inkbridge import ops
+
+    connect = lambda: client  # noqa: E731
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    client.push(f, "Document")  # orphan: on the cloud, not in the ledger
+    manifest_path = tmp_path / "form.manifest.json"
+    manifest_path.write_text(json.dumps(MANIFEST))
+    ledger = Ledger(tmp_path / "ledger.json")
+    assert ledger.entries == []
+
+    payload = ops.reconcile(connect, ledger, "Document", "form.pdf",
+                            manifest_path=manifest_path)
+    assert payload["doc_id"] == "form-abc12345"
+    assert payload["remote"] == {"folder": "Document", "name": "form.pdf"}
+    assert payload["base_md5"] == hashlib.md5(b"%PDF-form").hexdigest()
+
+    reloaded = Ledger(ledger.path)
+    assert [e["remote"] for e in reloaded.entries] == [
+        {"folder": "Document", "name": "form.pdf"}]
+    # Re-reconciling a now-tracked file is refused (not an orphan).
+    with pytest.raises(ops.AlreadyTrackedError):
+        ops.reconcile(connect, reloaded, "Document", "form.pdf",
+                      manifest_path=manifest_path)
+
+
+def test_reconcile_missing_remote_is_not_found(client: PCClient, tmp_path: Path):
+    from inkbridge import ops
+
+    ledger = Ledger(tmp_path / "ledger.json")
+    with pytest.raises(FileNotFoundError):
+        ops.reconcile(lambda: client, ledger, "Document", "ghost.pdf",
+                      manifest_path=None)
+
+
 def _server_from_env(monkeypatch, server: FakeServer):
     def from_env(cls, env_file=None):
         http = httpx.Client(transport=httpx.MockTransport(server.handler))

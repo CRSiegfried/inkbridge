@@ -50,15 +50,32 @@ class NoResponseError(Exception):
     """No ``.mark`` response has synced back for the doc yet (CLI → NO_CHANGE)."""
 
 
-def dispatch(connect, ledger, file, *, remote_folder, manifest_path):
+class AlreadyTrackedError(Exception):
+    """The remote file reconcile was asked to adopt is already in the ledger —
+    it is not an orphan (CLI → NO_CHANGE)."""
+
+
+def dispatch(connect, ledger, file, *, remote_folder, manifest_path, replace=False):
     """Push ``file`` and record it in ``ledger`` as awaiting a response.
 
     Returns the ``dispatch.v1`` body. ``connect().push`` may raise
     ``FileNotFoundError`` (remote folder missing) or ``FileExistsError`` (the
     private cloud has no overwrite) — both propagate for the CLI to map.
+
+    ``replace`` makes dispatch idempotent (A4): the remote name is deleted first
+    (delete-then-push), so re-dispatching an already-present doc succeeds and
+    leaves exactly one remote copy instead of dying on the no-overwrite
+    ``FileExistsError``. A missing remote name is not an error under ``replace``
+    — the delete is best-effort and the push then surfaces any folder problem.
     """
     manifest = json.loads(Path(manifest_path).read_text()) if manifest_path else None
-    info = connect().push(file, remote_folder)
+    client = connect()
+    if replace:
+        try:
+            client.delete(remote_folder, Path(file).name)
+        except FileNotFoundError:
+            pass  # nothing to replace (first dispatch, or folder push will flag)
+    info = client.push(file, remote_folder)
     entry = entry_for(file, info, manifest, manifest_path)
     ledger.upsert(entry)
     ledger.save()
@@ -68,6 +85,42 @@ def dispatch(connect, ledger, file, *, remote_folder, manifest_path):
         "manifest": entry["manifest"],
         "response_cells": len(entry["response_cells"]),
         "trigger_cells": len(entry["trigger_cells"]),
+        "ledger": str(ledger.path),
+    }
+
+
+def reconcile(connect, ledger, folder, name, *, manifest_path):
+    """Adopt an orphaned remote file — one present on the cloud with no ledger
+    entry (e.g. a dispatch that pushed then crashed before saving the ledger, or
+    a file pushed out of band) — into ``ledger`` so ``status``/``collect`` can
+    track it. Returns the ``reconcile.v1`` body.
+
+    Raises ``AlreadyTrackedError`` when the remote is already in the ledger (not
+    an orphan), or ``FileNotFoundError`` when no such remote file exists.
+    """
+    remote = {"folder": folder, "name": name}
+    if any(e["remote"] == remote for e in ledger.entries):
+        raise AlreadyTrackedError(
+            f"{folder}/{name} is already tracked in {ledger.path} — not an orphan")
+    client = connect()
+    rows = {r["fileName"]: r for r in client.ls(client.resolve_dir(folder))}
+    row = rows.get(name)
+    if row is None:
+        raise FileNotFoundError(
+            f"{folder}/{name} is not on the server — nothing to reconcile")
+    manifest = json.loads(Path(manifest_path).read_text()) if manifest_path else None
+    # Synthesize the push-info entry_for expects from the listing row (the same
+    # md5/size a completed push would have recorded).
+    push_info = {"folder": folder, "name": name,
+                 "md5": row["md5"], "size": row["size"]}
+    entry = entry_for(Path(name), push_info, manifest, manifest_path)
+    ledger.upsert(entry)
+    ledger.save()
+    return {
+        "doc_id": entry["doc_id"],
+        "remote": entry["remote"],
+        "manifest": entry["manifest"],
+        "base_md5": entry["base_md5"],
         "ledger": str(ledger.path),
     }
 
