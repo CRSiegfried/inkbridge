@@ -18,13 +18,16 @@ from pathlib import Path
 
 import pytest
 from fake_cloud import FakeServer
-from mcp.server.fastmcp import Image
-from mcp.server.fastmcp.exceptions import ToolError
 
 from inkbridge import mcp
 from inkbridge.dispatch import Ledger
 from inkbridge.readback import CellReading, Decision, PageReading
 from inkbridge.transport.private_cloud import PCClient
+
+pytest.importorskip("mcp", reason="optional [mcp] extra not installed")
+
+from mcp.server.fastmcp import Image
+from mcp.server.fastmcp.exceptions import ToolError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
