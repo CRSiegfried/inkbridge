@@ -9,10 +9,9 @@ already done and maintained upstream. What it owns is:
 
 1. A unified interface (`push` / `pull` / `merge`) over transports that
    currently only exist as separate, incompatible tools.
-2. The PDF↔notes merge/chain logic, which doesn't exist anywhere yet.
-3. An agent-facing surface (a CLI and an MCP server) so an LLM agent can
+2. An agent-facing surface (a CLI and an MCP server) so an LLM agent can
    drive the whole loop without a human operating multiple CLIs by hand.
-4. Low-latency, targeted reads of a notebook — checking a specific
+3. Low-latency, targeted reads of a notebook — checking a specific
    page/region rather than paying for a full conversion every time. See
    `note-format.md` (local archive, unpublished).
 
@@ -29,7 +28,7 @@ src/inkbridge/
   compose/           # Markdown / block-IR -> tickable PDF + input manifest
   readback.py        # per-cell decode of a pulled .pdf.mark
   answers.py         # question-level resolution over the readback
-  merge.py           # PDF + notes chaining — the new capability
+  merge.py           # PDF-to-PDF chaining
   ops.py             # in-process operations layer the CLI and MCP share
   cli.py             # `inkbridge push|pull|dispatch|collect|...`
   mcp.py             # agent-facing stdio MCP server (`inkbridge-mcp`)
@@ -78,10 +77,7 @@ Analysis 0007 (unpublished).
 ```
 
 Steps 1-2 and 4-6 are the parts worth automating first; step 3 is
-irreducibly manual (that's the point of a pen-and-paper device). The
-PDF+notes merge feature slots in between steps 1 and 2, or as a standalone
-command (`inkbridge merge base.pdf notes.note -o combined.pdf`) for the
-simpler non-agentic use case the user asked for directly.
+irreducibly manual (that's the point of a pen-and-paper device).
 
 **Note (annotated PDFs).** The step-4 comment above assumes a `.note` comes
 back, which holds when the human writes in a native notebook. But if what
@@ -120,22 +116,13 @@ so it isn't a painful retrofit once the agent loop (Phase 4) needs it.
 
 ## Open design questions
 
-- Should `merge` operate on the `.note` file directly (insert PDF pages as
-  background layers under a notebook) or always go through a PDF
-  intermediate (flatten notes to PDF, then merge PDFs)? The latter is
-  simpler and reuses `supernotelib`'s existing PDF export; the former
-  preserves editability on-device but requires understanding (and possibly
-  writing to) the `.note` format, which no library currently does — all
-  existing tools are read-only converters.
 - ~~Build our own MCP server, or contribute agent-facing commands upstream to
   `allenporter/supernote`'s existing MCP server instead of duplicating it?~~
   Since decided: `inkbridge` ships its own tightly-scoped stdio MCP server as
   a thin front-end over the in-process operations layer — see
   [the MCP how-to](how-to/run-the-mcp-server.md).
 
-The merge question is deliberately *not* decided yet — it isn't developed
-enough to commit to an ADR. It, the still-open investigations behind it, and
-the not-yet-started research threads (push/`.mark` reunification, going
-around Ratta's cloud, security/trust, failure modes, polling economics) are
-all tracked as a reviewable research program in
-the research-state MoC (local archive, unpublished).
+The still-open investigations and not-yet-started research threads
+(push/`.mark` reunification, going around Ratta's cloud, security/trust,
+failure modes, polling economics) are tracked as a reviewable research
+program in the research-state MoC (local archive, unpublished).

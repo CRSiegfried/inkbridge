@@ -93,11 +93,9 @@ necessary.
 
 ## The actual gap
 
-No existing project merges/chains a PDF with a notes page (appending
-handwritten pages to a PDF, or vice versa), and no existing project closes
-the full agent↔device loop (agent pushes a document, human annotates,
-agent reads the result back programmatically). Those are what `inkbridge`
-adds — everything else above is reused, not rebuilt.
+No existing project closes the full agent↔device loop (agent pushes a
+document, human annotates, agent reads the result back programmatically).
+That is what `inkbridge` adds — everything else above is reused, not rebuilt.
 
 ## Licensing notes
 
