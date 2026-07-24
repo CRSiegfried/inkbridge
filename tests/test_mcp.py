@@ -309,6 +309,23 @@ def test_composite_page_missing_base_maps_not_found(tmp_path: Path):
 
 # -- the tool surface -----------------------------------------------------
 
+def test_every_tool_has_a_nonempty_description():
+    """Regression for the ``wait_for_response`` docstring bug: a trailing
+    ``% WAIT_CAP_S`` after the closing ``\"\"\"`` made it a discarded
+    expression rather than a docstring, so the registered MCP tool description
+    came out empty. Guard the whole tool surface, not just that one tool."""
+    tools = mcp.server._tool_manager.list_tools()
+    assert tools, "no tools registered"
+    for tool in tools:
+        assert tool.description and tool.description.strip(), (
+            f"tool {tool.name!r} has an empty description")
+
+
+def test_wait_for_response_description_interpolates_cap():
+    tools = {t.name: t for t in mcp.server._tool_manager.list_tools()}
+    assert "120" in tools["wait_for_response"].description
+
+
 def test_no_cli_import():
     """The server must reach the domain through ops/compose/composite, never
     the Click front-end. Checked in a fresh interpreter, since other test
@@ -323,3 +340,46 @@ def test_no_cli_import():
         capture_output=True, text=True)
     assert proc.returncode == 0, (
         f"importing inkbridge.mcp pulled in inkbridge.cli\n{proc.stderr}")
+
+
+def test_import_survives_missing_mcp_dependency():
+    """Importing inkbridge.mcp must never raise a bare ModuleNotFoundError
+    when the optional ``mcp`` extra isn't installed — that's exactly what a
+    plain ``pip install inkbridge`` + ``inkbridge-mcp`` gives you otherwise,
+    since the console script unconditionally does ``from inkbridge.mcp import
+    main``. Hides the real ``mcp`` package from a child interpreter by
+    stuffing ``None`` into ``sys.modules['mcp']`` first (the documented way
+    to make ``import mcp`` raise ImportError) and checks the import alone
+    succeeds."""
+    import subprocess
+    import sys
+
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.modules['mcp'] = None; "
+         "import inkbridge.mcp"],
+        capture_output=True, text=True)
+    assert proc.returncode == 0, (
+        f"import failed with mcp hidden\nstderr:\n{proc.stderr}")
+
+
+def test_main_without_mcp_dependency_prints_friendly_message_and_exits():
+    """Regression for the base-install traceback bug: with ``mcp`` hidden,
+    calling main() must print one clear line on stderr telling the user to
+    ``pip install 'inkbridge[mcp]'`` and exit with the taxonomy's usage-error
+    code (contract.Exit.USAGE == 2) — never a raw ModuleNotFoundError
+    traceback."""
+    import subprocess
+    import sys
+
+    from inkbridge.contract import Exit
+
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import sys; sys.modules['mcp'] = None; "
+         "from inkbridge import mcp; mcp.main()"],
+        capture_output=True, text=True)
+    assert proc.returncode == int(Exit.USAGE), (
+        f"unexpected exit code {proc.returncode}\nstderr:\n{proc.stderr}")
+    assert "Traceback" not in proc.stderr, f"raw traceback leaked:\n{proc.stderr}"
+    assert "pip install 'inkbridge[mcp]'" in proc.stderr, proc.stderr

@@ -10,8 +10,12 @@ captures MAY be tracked under `tests/fixtures/` solely as test inputs.
 
 ## Documentation
 
-All docs live in `deploy/local/docs-archive/` (local-only; the public repo
-has none for now). Any new documentation file, or a substantive edit to an
-existing one, must be reviewed by the `docs-maintainer` subagent before
-being considered done. See `deploy/local/docs-archive/README.md` for the
-framework it enforces.
+Public documentation lives in `docs/` — the ADRs (`docs/adr/`), the CLI
+reference (`docs/reference/cli.md`), the remediation plan, and selected
+explainers/how-tos. See `docs/README.md` for the map and the citation
+conventions. The analysis (research-notes) series and other working material
+stay in the local-only archive `deploy/local/docs-archive/` (gitignored), which
+also holds the full documentation framework `README.md`. Any new documentation
+file, or a substantive edit to an existing one — in `docs/` or in the local
+archive — must be reviewed by the `docs-maintainer` subagent before being
+considered done.

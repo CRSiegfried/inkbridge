@@ -70,6 +70,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+class LedgerCorruptError(Exception):
+    """The ledger file exists but can't be read as a ledger — truncated,
+    hand-edited into invalid JSON, or missing/misshapen its ``entries`` list
+    (CLI -> PRECONDITION: the environment isn't ready until it's repaired or
+    removed)."""
+
+
 class Ledger:
     """JSON-file list of dispatch entries, keyed by remote folder/name."""
 
@@ -77,7 +84,16 @@ class Ledger:
         self.path = Path(path) if path else default_ledger_path()
         self.entries: list[dict] = []
         if self.path.exists():
-            self.entries = json.loads(self.path.read_text())["entries"]
+            try:
+                entries = json.loads(self.path.read_text())["entries"]
+                if not isinstance(entries, list):
+                    raise TypeError(f"'entries' is a {type(entries).__name__}, not a list")
+                self.entries = entries
+            except (json.JSONDecodeError, KeyError, TypeError) as e:
+                raise LedgerCorruptError(
+                    f"ledger at {self.path} is corrupt or not valid JSON ({e}); "
+                    "inspect/repair it, or remove it to start a fresh ledger"
+                ) from e
 
     def find(self, doc_id: str) -> dict | None:
         return next((e for e in self.entries if e["doc_id"] == doc_id), None)

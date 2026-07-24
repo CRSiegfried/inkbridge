@@ -1,9 +1,9 @@
-"""Compose: markdown → row-grid PDF + input-area manifest (Phase 2.5).
+"""Compose: markdown → row-grid PDF + input-area manifest.
 
 The renderer emits the manifest as a byproduct of
 rendering — every cell bbox is row arithmetic, and the manifest's
-`bbox_norm` values feed convert.targeted.region_has_ink unchanged on the
-readback side.
+`bbox_norm` values are consumed unchanged by the readback side's
+ink-coverage measurement (inkbridge.readback).
 
 The target device is a geometry profile (geometry.PROFILES): Manta is the
 calibrated default; the Nomad profile renders to its community-documented

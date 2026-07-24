@@ -72,6 +72,25 @@ def _cloud_errors(as_json: bool = False):
 
 
 @contextmanager
+def _ledger_errors(as_json: bool = False):
+    """Translate a corrupt ledger file into the agent-facing exit taxonomy: a
+    truncated or hand-edited ``ledger.json`` becomes a typed PRECONDITION(6),
+    not an uncaught ``JSONDecodeError`` traceback an agent can't branch on.
+
+    Wrap every ``Ledger(...)`` construction (dispatch/reconcile/status/wait/
+    collect all read the ledger up front).
+    """
+    from inkbridge.contract import CliError, Exit
+    from inkbridge.dispatch import LedgerCorruptError
+
+    try:
+        yield
+    except LedgerCorruptError as e:
+        raise CliError(str(e), code="ledger_corrupt", exit_status=Exit.PRECONDITION,
+                       as_json=as_json) from e
+
+
+@contextmanager
 def _mark_errors(as_json: bool = False):
     """Translate a sparse-mark refusal into the agent-facing exit taxonomy: a
     manifest page absent from the pulled mark (a sparse mark — blank/missing
@@ -356,7 +375,8 @@ def dispatch(file: Path, remote_folder: str, manifest_path: Path | None,
     if manifest_path is None:
         sibling = file.with_suffix(".manifest.json")
         manifest_path = sibling if sibling.exists() else None
-    ledger = Ledger(ledger_path)
+    with _ledger_errors(as_json):
+        ledger = Ledger(ledger_path)
     with _cloud_errors(as_json):
         try:
             payload = ops.dispatch(transport.connect, ledger, file,
@@ -406,7 +426,8 @@ def reconcile(remote_path: str, manifest_path: Path | None,
     from inkbridge.dispatch import Ledger
 
     folder, name = _split_remote(remote_path)
-    ledger = Ledger(ledger_path)
+    with _ledger_errors(as_json):
+        ledger = Ledger(ledger_path)
     with _cloud_errors(as_json):
         try:
             payload = ops.reconcile(transport.connect, ledger, folder, name,
@@ -444,7 +465,8 @@ def status(ledger_path: Path | None, update: bool, as_json: bool) -> None:
     from inkbridge.contract import emit_result
     from inkbridge.dispatch import Ledger
 
-    ledger = Ledger(ledger_path)
+    with _ledger_errors(as_json):
+        ledger = Ledger(ledger_path)
     if not ledger.entries:
         if as_json:
             emit_result({"ledger": str(ledger.path), "entries": []}, "status.v1")
@@ -484,7 +506,8 @@ def wait(doc_id: str, ledger_path: Path | None, timeout: float,
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
 
-    ledger = Ledger(ledger_path)
+    with _ledger_errors(as_json):
+        ledger = Ledger(ledger_path)
     with _cloud_errors(as_json):
         try:
             payload = ops.wait(transport.connect, ledger, doc_id, timeout=timeout)
@@ -522,12 +545,12 @@ def collect(doc_id: str, ledger_path: Path | None, output_dir: Path,
     unknown doc_id, 6 when the doc was dispatched without a manifest or the
     pulled mark is sparse (a blank page can't be read positionally).
     """
-    from inkbridge import ops
+    from inkbridge import ops, transport
     from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.dispatch import Ledger
-    from inkbridge import transport
 
-    ledger = Ledger(ledger_path)
+    with _ledger_errors(as_json):
+        ledger = Ledger(ledger_path)
     try:
         with _cloud_errors(as_json), _mark_errors(as_json):
             payload = ops.collect(transport.connect, ledger, doc_id,
@@ -570,10 +593,15 @@ def readback(manifest: Path, mark_file: Path, hash_store_path: Path | None,
     """
     import json as jsonlib
 
-    from inkbridge.contract import emit_result
+    from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge.readback import InkHashStore, read_mark
 
-    manifest_data = jsonlib.loads(manifest.read_text())
+    try:
+        manifest_data = jsonlib.loads(manifest.read_text())
+    except jsonlib.JSONDecodeError as e:
+        raise CliError(f"manifest is not valid JSON: {manifest} ({e})",
+                       code="invalid_manifest", exit_status=Exit.ERROR,
+                       as_json=as_json) from e
     doc_id = manifest_data["doc_id"]
     with _mark_errors(as_json):
         pages = read_mark(manifest_data, mark_file)

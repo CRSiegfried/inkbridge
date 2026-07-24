@@ -25,7 +25,7 @@ down; ``answers`` pins it):
   command — the one place a shared version is correct.
 
 Each command documents its own ``schema_version`` and payload in
-``reference/cli.md`` as it is built.
+``docs/reference/cli.md`` as it is built.
 """
 
 from __future__ import annotations

@@ -23,9 +23,9 @@ and adds the missing merge/chain logic and an agent-facing interface on top.
 ```
             ┌─────────────┐
    agent /  │  inkbridge  │   push()  ──────────▶  Supernote Manta
-   human  ─▶│     CLI     │   pull()  ◀──────────  (Cloud sync /
-            │  (+ future  │   merge()               Browse & Access /
-            │  MCP server)│                         USB)
+   human  ─▶│  CLI + MCP  │   pull()  ◀──────────  (Cloud sync /
+            │    server   │   merge()               Browse & Access /
+            │             │                         USB)
             └─────────────┘
 ```
 
@@ -43,7 +43,8 @@ the private-cloud transport is the supported path. The `Transport` protocol
 implements against — the official Supernote Cloud backend is future work.
 
 Contributions and Manta owners willing to test the device-facing commands are
-welcome.
+welcome — open a GitHub issue to discuss a change, or send a pull request
+directly.
 
 ## Install (dev)
 
@@ -67,9 +68,13 @@ inkbridge merge base.pdf addition.pdf --output combined.pdf
 inkbridge composite notes.pdf notes.pdf.mark -o capture.png
 ```
 
-The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`)
-talk to a Supernote private-cloud deployment and read credentials from the
-environment:
+See `examples/` for sampler Markdown documents (`sampler_form.md`,
+`sampler_typography.md`) exercising every input primitive the compose
+renderer supports, alongside their rendered output.
+
+The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`,
+`ls`, `rm`, `wait`, `reconcile`) talk to a Supernote private-cloud deployment
+and read credentials from the environment:
 
 ```bash
 export INKBRIDGE_CLOUD_URL="https://your-private-cloud.example.com"
@@ -80,8 +85,20 @@ inkbridge doctor                          # verify config, connectivity, and log
 inkbridge compose notes.md -o notes.pdf   # emits notes.pdf + notes.manifest.json
 inkbridge dispatch notes.pdf              # push, recording it in the ledger
 inkbridge status                          # which dispatched docs have new marks
-inkbridge collect <doc-id>                # pull the annotated result back
+inkbridge collect <doc-id>                # pull the annotated result back,
+                                           # writing a <doc>.answers.json sidecar
+
+# Re-read the pulled response at any time, without touching ledger or remote:
+inkbridge readback notes.manifest.json notes.pdf.mark   # per-cell blank/ANSWERED/AMBIGUOUS
+inkbridge answers  notes.manifest.json notes.pdf.mark   # resolved, question-by-question
 ```
+
+That five-step chain — `compose` → `dispatch` → (you ink the device) →
+`collect` → `readback`/`answers` — is the full round trip: render a
+question, hand it to the device, and get a structured answer back out.
+`readback` reports the raw per-cell decode; `answers` resolves the same
+read into semantic, question-level results (a winning choice, a checkbox
+boolean, or `needs_review` for a cell to inspect with `composite`).
 
 `inkbridge doctor` is the quickest way to confirm the credentials work: it
 logs in and lists the root, exiting `0` when ready, `5` on a bad/expired
@@ -91,8 +108,30 @@ The three credentials may also live in a `./.env` file instead of the
 environment. Run `inkbridge <command> --help` for the full flag set on any
 command.
 
+A few utility verbs round out the private-cloud side: `inkbridge ls
+[folder]` lists a folder's contents (the root if omitted); `inkbridge wait
+<doc-id>` blocks until a dispatched document's response arrives, as an
+alternative to polling `status`; `inkbridge reconcile <remote-path>` adopts
+an orphaned remote file — one pushed out of band, or left behind by a
+dispatch that crashed after the push — back into the ledger so `status` and
+`collect` can track it again; and `inkbridge rm <remote-path>...`
+**permanently deletes** files from the private cloud (no undo), refusing to
+run without confirmation — pass `-y`/`--yes` to confirm non-interactively
+(required under `--json` or a non-TTY stdin).
+
+`docs/reference/cli.md` is the complete command reference, including every
+flag, the `--json` output contract for each command, and the exit-code
+taxonomy agents can branch on.
+
+An MCP server (`inkbridge-mcp`, installed with the optional `mcp` extra)
+exposes the same compose → dispatch → wait → collect loop as tools for an
+MCP-capable agent — see `docs/how-to/run-the-mcp-server.md`.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). Note that one adjacent tool in the ecosystem
 (`sn2md`) is AGPL-3.0; `inkbridge` only ever shells out to it as an external
 CLI, never imports it as a library, to keep this project's license clean.
+The package also bundles the Bitstream Vera Mono font used by `compose`,
+under its own permissive license — see
+[`src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT`](src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT).

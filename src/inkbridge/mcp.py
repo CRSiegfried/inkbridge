@@ -23,20 +23,64 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import httpx
-from mcp.server.fastmcp import FastMCP, Image
-from mcp.server.fastmcp.exceptions import ToolError
 
 from inkbridge import ops, transport
-from inkbridge.dispatch import Ledger
+from inkbridge.dispatch import Ledger, LedgerCorruptError
 from inkbridge.readback import SparseMarkError
 from inkbridge.transport import AuthError
 
-server = FastMCP("inkbridge")
+# ``mcp`` (the ``pip install 'inkbridge[mcp]'`` extra) is optional, but the
+# ``inkbridge-mcp`` console script is registered unconditionally in
+# pyproject.toml. That means simply *importing* this module must never raise
+# a bare ModuleNotFoundError, or the console script traces back before
+# main() ever gets a chance to print something useful. So the import is
+# guarded here and the failure is deferred to main(): the tools below are
+# still defined and "registered" at import time (this module's normal
+# layout), just against a no-op stand-in for ``server`` when the real
+# package isn't there — main() exits with a friendly message long before any
+# tool could actually be invoked.
+try:
+    from mcp.server.fastmcp import FastMCP, Image
+    from mcp.server.fastmcp.exceptions import ToolError
+except ImportError as _e:
+    _MCP_IMPORT_ERROR: Exception | None = _e
+
+    class ToolError(Exception):  # noqa: N818 - mirrors mcp's ToolError name
+        """Stand-in for ``mcp.server.fastmcp.exceptions.ToolError`` used only
+        while the optional ``mcp`` dependency is missing. Never actually
+        raised in that state: main() exits before any tool runs."""
+
+    class Image:  # stand-in for mcp.server.fastmcp.Image
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+    class _StubMCP:
+        """No-op stand-in for ``FastMCP`` so the ``@server.tool()`` /
+        ``@server.resource()`` decorators below stay harmless when ``mcp``
+        isn't installed, instead of failing at import time."""
+
+        def tool(self, *args, **kwargs):
+            def _decorator(fn):
+                return fn
+
+            return _decorator
+
+        def resource(self, *args, **kwargs):
+            def _decorator(fn):
+                return fn
+
+            return _decorator
+
+    server = _StubMCP()
+else:
+    _MCP_IMPORT_ERROR = None
+    server = FastMCP("inkbridge")
 
 # Longest window a single wait_for_response call polls before returning; MCP
 # clients time out long tool calls, so an agent loops status/short waits past
@@ -73,6 +117,7 @@ _ERROR_CODES: list[tuple[type[BaseException], str]] = [
     (ops.AlreadyTrackedError, "already_tracked"),
     (ops.WaitTimeout, "timeout"),
     (SparseMarkError, "sparse_mark"),
+    (LedgerCorruptError, "ledger_corrupt"),
     (AuthError, "auth"),
     (FileExistsError, "already_exists"),
     (FileNotFoundError, "not_found"),
@@ -205,20 +250,30 @@ def status(acknowledge: bool = False, ledger_path: str | None = None) -> dict[st
     return {"ledger": str(ledger.path), "entries": rows}
 
 
-@server.tool()
 def wait_for_response(
     doc_id: str,
     timeout_s: float = 60.0,
     ledger_path: str | None = None,
 ) -> dict[str, Any]:
-    """Bounded long-poll until ``doc_id``'s mark arrives — the synchronizing
-    verb of the loop. ``timeout_s`` is clamped to %.0f s (loop status/short
-    waits for longer). Returns the wait.v1 status row on arrival; errors with
-    code ``timeout`` if none lands in the window.""" % WAIT_CAP_S
     ledger = _ledger(ledger_path)
     timeout = min(timeout_s, WAIT_CAP_S)
     with _tool_errors():
         return ops.wait(_connect, ledger, doc_id, timeout=timeout)
+
+
+# Built (rather than a literal docstring) so the cap is interpolated in one
+# place; assigned before the ``server.tool()`` call below so the registered
+# MCP tool description picks it up (the decorator reads ``fn.__doc__`` at
+# registration time, so this must happen first — a trailing ``% WAIT_CAP_S``
+# after the closing `"""` is a discarded expression, not a docstring, and
+# silently leaves the description empty).
+wait_for_response.__doc__ = (
+    "Bounded long-poll until ``doc_id``'s mark arrives — the synchronizing "
+    "verb of the loop. ``timeout_s`` is clamped to %.0f s (loop status/short "
+    "waits for longer). Returns the wait.v1 status row on arrival; errors "
+    "with code ``timeout`` if none lands in the window." % WAIT_CAP_S
+)
+wait_for_response = server.tool()(wait_for_response)
 
 
 @server.tool()
@@ -271,6 +326,19 @@ def ledger_resource() -> str:
 
 def main() -> None:
     """Console entry point (``inkbridge-mcp``): run the stdio server."""
+    if _MCP_IMPORT_ERROR is not None:
+        # The optional ``mcp`` extra isn't installed. Fail with one clear
+        # line on stderr and the CLI's usage-error exit code instead of the
+        # raw ModuleNotFoundError traceback the unguarded import would give.
+        from inkbridge.contract import Exit
+
+        print(
+            "inkbridge-mcp: the 'mcp' package is not installed; "
+            "run: pip install 'inkbridge[mcp]'",
+            file=sys.stderr,
+        )
+        raise SystemExit(int(Exit.USAGE))
+
     import argparse
 
     global _PROFILE, _LEDGER_PATH

@@ -1,4 +1,5 @@
 __pycache__/
+.claude/scheduled_tasks.lock
 *.pyc
 *.egg-info/
 .pytest_cache/
@@ -9,9 +10,6 @@ dist/
 build/
 .DS_Store
 uv.lock
-
-# Local-only Claude Code agents (govern the gitignored deploy/local/ tree)
-.claude/agents/docs-maintainer.md
 
 # Device credentials / local captures — never commit these
 *.env
@@ -30,8 +28,8 @@ responses/
 # deploy/local/ is this machine's filled-in instance and never gets committed.
 deploy/local/
 
-# scratchpad: sources tracked, generated artifacts and logs not
-scratchpad/*.pdf
-scratchpad/*.png
-scratchpad/*.json
-scratchpad/*.log
+# examples: sources tracked, generated artifacts and logs not
+examples/*.pdf
+examples/*.png
+examples/*.json
+examples/*.log

@@ -339,3 +339,24 @@ def test_answers_from_injected_decoder(tmp_path, monkeypatch):
     (answer,) = resolve_answers(readings)
     assert answer.id == "checkbox.agree"
     assert answer.status is Status.ANSWERED and answer.value is True
+
+
+def test_cli_readback_malformed_manifest_is_contract_error_not_traceback(tmp_path):
+    # ADR-0002 §4: a failure is a JSON envelope on stderr, never a traceback.
+    # 'readback' must guard invalid manifest JSON exactly like its sibling
+    # 'answers' does (same error code, same exit, same envelope).
+    from click.testing import CliRunner
+
+    from inkbridge.cli import main
+
+    bad = tmp_path / "bad.manifest.json"
+    bad.write_text("this is not json {")
+    mark = tmp_path / "m.pdf.mark"
+    mark.write_bytes(b"x")
+
+    res = CliRunner().invoke(main, ["readback", str(bad), str(mark), "--json"])
+    assert res.exit_code == 1
+    assert res.stdout == "" and "Traceback" not in res.stderr
+    err = json.loads(res.stderr)
+    assert err["schema_version"] == "error.v1"
+    assert err["error"]["code"] == "invalid_manifest"

@@ -1,9 +1,9 @@
 """Cheap, targeted reads of a single page/region — no full conversion.
 
-Phase 1.5 work on the roadmap. supernotelib
-already exposes per-page decode separately from whole-notebook conversion,
-which should make this much cheaper than routing through
-convert.notebook.note_to_pdf + OCR for a simple "was this marked" check.
+supernotelib exposes per-page decode separately from whole-notebook
+conversion, which makes reading a single page or region much cheaper
+than routing through ``convert.notebook.note_to_pdf`` plus OCR for a
+simple "was this marked" check.
 """
 
 from __future__ import annotations
@@ -16,15 +16,6 @@ from pathlib import Path
 # [0, 200) is treated as ink; the exact cutoff barely matters (a
 # sensitivity sweep moves coverage <0.02 pp for cutoffs 50..250).
 INK_GRAY_CUTOFF = 200
-
-# Fraction-of-cell coverage above which region_has_ink returns True by
-# default. Empirically (real Manta fixtures) a true blank
-# cell is exactly 0.000, a single stray dot is ~0.062%, a half-stroke is
-# ~0.19%, and the lightest deliberate answer (a checkmark) is ~0.49%.
-# 0.30% sits in the gap between the half-stroke and the lightest real
-# answer; it is NOT a clean separator from a stray/partial mark — see the
-# analysis's ambiguity-band discussion before relying on presence alone.
-DEFAULT_COVERAGE_THRESHOLD = 0.003
 
 
 def decode_page_gray(note_path: Path, page_number: int):
@@ -83,48 +74,20 @@ def coverage_in_gray(
     return float(np.count_nonzero(crop < ink_gray_cutoff)) / crop.size
 
 
-def region_ink_coverage(
-    note_path: Path,
-    page_number: int,
-    bbox_norm: tuple[float, float, float, float],
-    *,
-    ink_gray_cutoff: int = INK_GRAY_CUTOFF,
-    pad_px: int = 0,
-) -> float:
-    """Fraction (0..1) of pixels inside the normalized bbox that are ink
-    (grayscale < ink_gray_cutoff) on the current decoded state of the page.
-    """
-    gray = decode_page_gray(note_path, page_number)
-    return coverage_in_gray(
-        gray, bbox_norm, ink_gray_cutoff=ink_gray_cutoff, pad_px=pad_px)
-
-
-def region_has_ink(
-    note_path: Path,
-    page_number: int,
-    bbox_norm: tuple[float, float, float, float],
-    *,
-    threshold: float = DEFAULT_COVERAGE_THRESHOLD,
-    ink_gray_cutoff: int = INK_GRAY_CUTOFF,
-    pad_px: int = 0,
-) -> bool:
-    """Decode a single page and report whether the normalized top-left bbox
-    [x, y, w, h] contains ink coverage strictly above ``threshold`` — a
-    presence check for "was this cell answered", without full OCR/VLM.
-
-    Presence-only cannot distinguish a legitimate light answer from a stray
-    or partial mark; ``threshold`` trades false-positives
-    (stray dots) against false-negatives (faint/partial answers).
-    """
-    coverage = region_ink_coverage(
-        note_path, page_number, bbox_norm,
-        ink_gray_cutoff=ink_gray_cutoff, pad_px=pad_px,
-    )
-    return coverage > threshold
-
-
 def page_changed(note_path: Path, page_number: int, since_token: str) -> bool:
-    """Cheapest tier: has this page changed since since_token, without
-    decoding stroke data? Feasibility unconfirmed.
+    """Report whether a page's ink content has changed since a prior
+    checkpoint, without decoding and comparing full stroke data.
+
+    Not yet implemented — it is not yet confirmed that the underlying
+    ``.note`` format exposes a cheap-enough signal (e.g. a per-page
+    revision marker or checksum) to answer this without doing the full
+    decode it's meant to avoid. Until this lands, callers who need to
+    detect changes can decode the page (see :func:`decode_page_gray`)
+    before and after and compare the results directly.
     """
-    raise NotImplementedError("Phase 1.5: confirm change-detection is possible at all")
+    raise NotImplementedError(
+        "page_changed is not yet implemented: cheap per-page change "
+        "detection has not been confirmed possible for the .note format. "
+        "As a workaround, decode the page with decode_page_gray() before "
+        "and after and compare the results yourself."
+    )

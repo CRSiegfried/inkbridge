@@ -74,6 +74,24 @@ def test_ledger_roundtrip_and_upsert(tmp_path: Path):
     assert [e["doc_id"] for e in reloaded.entries] == ["b-1", "a-2"]
 
 
+@pytest.mark.parametrize("contents", [
+    "{truncated",                       # not valid JSON at all
+    json.dumps({"nope": "no entries key"}),  # valid JSON, wrong shape
+    json.dumps({"entries": "not-a-list"}),   # entries present but wrong type
+])
+def test_ledger_corrupt_file_raises_typed_error(tmp_path: Path, contents: str):
+    # A truncated or hand-edited ledger must never surface as a raw
+    # JSONDecodeError/KeyError/TypeError traceback — it's a typed domain
+    # error the CLI layer maps to a contract-compliant PRECONDITION exit.
+    from inkbridge.dispatch import LedgerCorruptError
+
+    path = tmp_path / "ledger.json"
+    path.write_text(contents)
+    with pytest.raises(LedgerCorruptError) as exc_info:
+        Ledger(path)
+    assert str(path) in str(exc_info.value)
+
+
 def test_status_lifecycle(client: PCClient, server: FakeServer, tmp_path: Path):
     entry = _dispatch(client, tmp_path)
 
@@ -330,3 +348,33 @@ def test_cli_dispatch_json_missing_folder_is_exit_4(server: FakeServer, monkeypa
     assert res.exit_code == 4
     assert res.stdout == ""
     assert json.loads(res.stderr)["error"]["code"] == "not_found"
+
+
+def test_cli_dispatch_corrupt_ledger_is_precondition_not_traceback(tmp_path: Path):
+    # ADR-0002 §4: a failure is a JSON envelope on stderr, never a traceback —
+    # a corrupt ledger file must not crash dispatch with a raw JSONDecodeError.
+    ledger = tmp_path / "ledger.json"
+    ledger.write_text("{truncated")
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    res = _dispatch_cli(str(f), "--to", "Document",
+                        "--ledger", str(ledger), "--json")
+    assert res.exit_code == 6         # PRECONDITION, not an uncaught exception
+    assert res.stdout == "" and "Traceback" not in res.stderr
+    err = json.loads(res.stderr)
+    assert err["schema_version"] == "error.v1"
+    assert err["error"]["code"] == "ledger_corrupt"
+
+
+def test_cli_status_corrupt_ledger_is_precondition_not_traceback(tmp_path: Path):
+    # Every ledger-reading command (not just dispatch) must map the same
+    # corrupt-ledger failure to the same typed exit — here via 'status'.
+    from inkbridge.cli import main
+
+    ledger = tmp_path / "ledger.json"
+    ledger.write_text(json.dumps({"entries": "not-a-list"}))
+    res = CliRunner().invoke(main, ["status", "--ledger", str(ledger), "--json"])
+    assert res.exit_code == 6
+    assert res.stdout == "" and "Traceback" not in res.stderr
+    err = json.loads(res.stderr)
+    assert err["error"]["code"] == "ledger_corrupt"

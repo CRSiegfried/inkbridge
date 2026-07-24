@@ -32,6 +32,11 @@ dependencies = [
 dev = ["pytest>=8.0", "ruff>=0.6"]
 mcp = ["mcp>=1.0"]
 
+[project.urls]
+Homepage = "https://github.com/CRSiegfried/inkbridge"
+Repository = "https://github.com/CRSiegfried/inkbridge"
+Issues = "https://github.com/CRSiegfried/inkbridge/issues"
+
 [project.scripts]
 inkbridge = "inkbridge.cli:main"
 inkbridge-mcp = "inkbridge.mcp:main"
