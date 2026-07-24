@@ -1,9 +1,8 @@
 # inkbridge
 
 A control plane for the [Supernote Manta](https://supernote.com/pages/manta) e-ink
-tablet: push documents to the device, pull handwritten annotations back, and —
-the one thing Supernote's own software still can't do — chain a PDF together
-with a notes page into a single document.
+tablet: push documents to the device, pull handwritten annotations back, and
+chain PDFs together into a single document.
 
 The long-term goal is to treat the Manta as an I/O peripheral for AI agents:
 an agent drafts or fetches a document, `inkbridge` pushes it to the device,
@@ -14,8 +13,8 @@ the agent to read (OCR/VLM transcription, diagrams, math, the works).
 
 The Supernote community has already built solid pieces of this — a `.note`
 parser, unofficial Cloud API clients, even an MCP server for LLM access to
-notes. Nobody has wired them into one coherent push/pull/merge control plane,
-and nobody has solved PDF+notes merging. `inkbridge` is an orchestration layer,
+notes. Nobody has wired them into one coherent push/pull/merge control plane.
+`inkbridge` is an orchestration layer,
 not a from-scratch reimplementation: it wraps existing libraries for parsing
 and transport (chiefly [`supernotelib`](https://github.com/jya-dev/supernote-tool))
 and adds the missing merge/chain logic and an agent-facing interface on top.
@@ -37,8 +36,8 @@ document to a tickable PDF, send it to the tablet, detect which boxes were
 marked by hand, and read the answers back. `composite` reconstructs the
 combined page — decoded `.pdf.mark` ink overlaid on the rendered base page —
 into a single image host-side, the capture render handed to a VLM. `merge`
-(PDF chaining) works standalone. `.note`-to-PDF conversion is still a stub;
-the private-cloud transport is the supported path. The `Transport` protocol
+(PDF chaining) works standalone. The private-cloud transport is the supported
+path. The `Transport` protocol
 (`transport/base.py`) plus its conformance suite are the seam a second backend
 implements against — the official Supernote Cloud backend is future work.
 
@@ -61,7 +60,7 @@ The local-only commands need nothing but the package:
 # Render Markdown to a tickable PDF (dense layout is the device-validated default)
 inkbridge compose notes.md --output notes.pdf
 
-# Chain a PDF together with a notes page
+# Chain two PDFs into a single document
 inkbridge merge base.pdf addition.pdf --output combined.pdf
 
 # Overlay pulled-back ink onto the base page — one image for a VLM to read
@@ -129,9 +128,7 @@ MCP-capable agent — see `docs/how-to/run-the-mcp-server.md`.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Note that one adjacent tool in the ecosystem
-(`sn2md`) is AGPL-3.0; `inkbridge` only ever shells out to it as an external
-CLI, never imports it as a library, to keep this project's license clean.
+MIT — see [`LICENSE`](LICENSE).
 The package also bundles the Bitstream Vera Mono font used by `compose`,
 under its own permissive license — see
 [`src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT`](src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT).
