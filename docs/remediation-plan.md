@@ -473,8 +473,8 @@ network access (assert no httpx calls).
 ### D4 · No CI / gate
 **Resolved 2026-07-23** (commit `0c8c00f`): `.github/workflows/ci.yml` runs the
 three-part gate — `ruff check src tests`, `pytest -q`, and `inkbridge proof
-tests/fixtures/sampler_form.manifest.json` — on every push and PR (Python 3.10
-and 3.12). Check run 2026-07-23:
+tests/fixtures/sampler_form.manifest.json` — on every push and PR (Python 3.11
+and 3.13). Check run 2026-07-23:
 `git ls-files '.github/workflows/*.yml' | xargs grep -lE 'ruff' | xargs grep -lE 'pytest' | xargs grep -l 'inkbridge proof'`
 → resolves to `ci.yml` (all three steps present).
 
@@ -723,7 +723,8 @@ per-profile path under the state dir. `transport.connect(profile=None)` resolves
 the profile (explicit arg, else `$INKBRIDGE_PROFILE`) and builds a client from
 its credentials, falling back to `PCClient.from_env` when unnamed;
 `default_ledger_path` follows the active profile so credentials and ledger move
-together. `tomli` added as the 3.10 `tomllib` backfill. Check run 2026-07-23:
+together. Config parsing uses stdlib `tomllib` (project floor is Python 3.11;
+the earlier `tomli` 3.10 backfill was dropped 2026-07-24). Check run 2026-07-23:
 `pytest tests/test_config.py -k "named_profiles_select_device_and_ledger" -q` →
 **1 passed** (two profiles select distinct credentials + per-profile ledgers;
 full gate: 211 passed, ruff clean, proof exit 0).

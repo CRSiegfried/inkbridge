@@ -21,13 +21,9 @@ among several.
 from __future__ import annotations
 
 import os
+import tomllib as _toml  # stdlib on 3.11+ (project floor)
 from dataclasses import dataclass
 from pathlib import Path
-
-try:  # tomllib is stdlib on 3.11+; tomli backfills 3.10
-    import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover - only on 3.10
-    import tomli as _toml
 
 
 @dataclass(frozen=True)

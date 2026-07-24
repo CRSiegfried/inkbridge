@@ -3,6 +3,13 @@
 Status: Accepted
 Date: 2026-07-23
 
+> **Update 2026-07-24:** The `tomli` backport mentioned in the Decision and
+> Consequences below has been removed. The project floor moved to Python 3.11,
+> where `tomllib` is in the standard library, so `inkbridge.config` now imports
+> `tomllib` unconditionally — this is the anticipated cleanup the Consequences
+> section flagged ("dropped once 3.10 is"), not a new decision. The
+> named-profile design is unchanged.
+
 ## Context
 
 [Remediation item G6](../remediation-plan.md) targets the single-account

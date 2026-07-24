@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from inkbridge.atomicio import atomic_write_text, file_lock
@@ -67,7 +67,7 @@ def default_ledger_path() -> Path:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class LedgerCorruptError(Exception):
