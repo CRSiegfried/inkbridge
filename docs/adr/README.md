@@ -11,7 +11,12 @@ considered and rejected.
 - **Sequential, immutable once accepted.** `NNNN-slug.md`, numbers never
   reused. Don't edit an accepted ADR's Context/Decision after the fact —
   reality moved on, write a new ADR and set the old one's Status to
-  `Superseded by ADR-NNNN`.
+  `Superseded by ADR-NNNN`. The one exception: an anticipated,
+  decision-preserving cleanup the ADR itself flagged (e.g. dropping a stopgap
+  once the interpreter floor moves) may be recorded as a dated
+  `> **Update YYYY-MM-DD:**` note placed *above* the Context section. It must
+  not alter the Context/Decision/Consequences body, and it never covers a
+  change to the decision itself — that is always a supersession.
 - **One decision per ADR.** If you're describing two decisions, write two
   ADRs, even if they were made in the same conversation.
 - **Status is load-bearing.** `Proposed` (up for discussion) →
