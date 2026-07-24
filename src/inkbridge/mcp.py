@@ -174,6 +174,26 @@ def dispatch(
 
 
 @server.tool()
+def reconcile(
+    folder: str,
+    name: str,
+    manifest_path: str | None = None,
+    ledger_path: str | None = None,
+) -> dict[str, Any]:
+    """Adopt an orphaned remote file — one present on the cloud with no ledger
+    entry (a dispatch that pushed then crashed before saving, or a doc pushed
+    out of band) — into the ledger so ``status``/``collect`` can track it, without
+    re-uploading (which would overwrite any ink already on the device). Pass the
+    ``manifest_path`` so the ink can be resolved to answers later. Returns the
+    reconcile.v1 body; errors ``already_tracked`` if it is not an orphan or
+    ``not_found`` if no such remote file exists."""
+    ledger = _ledger(ledger_path)
+    with _tool_errors():
+        return ops.reconcile(_connect, ledger, folder, name,
+                             manifest_path=manifest_path)
+
+
+@server.tool()
 def status(acknowledge: bool = False, ledger_path: str | None = None) -> dict[str, Any]:
     """Poll the cloud for every tracked doc and return one row each
     (doc_id/remote/state/mark_md5/base_changed). ``acknowledge`` marks

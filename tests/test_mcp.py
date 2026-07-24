@@ -136,6 +136,44 @@ def test_dispatch_missing_folder_maps_not_found(inject, tmp_path: Path):
                      ledger_path=str(ledger_path))
 
 
+# -- reconcile ------------------------------------------------------------
+
+def test_reconcile_adopts_orphan(inject, tmp_path: Path):
+    # A remote file with no ledger entry (a dispatch that pushed then crashed
+    # before saving) is re-adopted into the ledger by reconcile.
+    f = tmp_path / "form.pdf"
+    f.write_bytes(b"%PDF-form")
+    inject.push(f, "Document")  # orphan: on the cloud, not in the ledger
+    manifest_path = tmp_path / "form.manifest.json"
+    manifest_path.write_text(json.dumps(MANIFEST))
+    ledger_path = tmp_path / "ledger.json"
+
+    payload = mcp.reconcile("Document", "form.pdf",
+                            manifest_path=str(manifest_path),
+                            ledger_path=str(ledger_path))
+    assert payload["doc_id"] == "form-abc12345"
+    assert payload["remote"] == {"folder": "Document", "name": "form.pdf"}
+    assert payload["base_md5"] == hashlib.md5(b"%PDF-form").hexdigest()
+    assert [e["remote"] for e in Ledger(ledger_path).entries] == [
+        {"folder": "Document", "name": "form.pdf"}]
+
+
+def test_reconcile_already_tracked_maps_already_tracked(inject, tmp_path: Path):
+    f, manifest_path, ledger_path = _seed_base(tmp_path)
+    mcp.dispatch(str(f), manifest_path=str(manifest_path),
+                 ledger_path=str(ledger_path))
+    with pytest.raises(ToolError, match=r"\[already_tracked\]"):
+        mcp.reconcile("Document", "form.pdf",
+                      manifest_path=str(manifest_path),
+                      ledger_path=str(ledger_path))
+
+
+def test_reconcile_missing_remote_maps_not_found(inject, tmp_path: Path):
+    ledger_path = tmp_path / "ledger.json"
+    with pytest.raises(ToolError, match=r"\[not_found\]"):
+        mcp.reconcile("Document", "ghost.pdf", ledger_path=str(ledger_path))
+
+
 # -- status ---------------------------------------------------------------
 
 def test_status_returns_status_v1(inject, server: FakeServer, tmp_path: Path):
