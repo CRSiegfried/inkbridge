@@ -1,14 +1,21 @@
 name: CI
 
-# Lint + test + a device-free end-to-end proof on every push and PR (D4).
+# Lint + test + a device-free end-to-end proof on master pushes and every PR (D4).
 # `proof` is inkbridge's own manifest→stamp→readback self-test, so it exercises
 # the compose/readback stack with no device and no human — free coverage the
 # gate should not leave on the table.
 
 on:
+  # Feature branches are covered by the pull_request trigger; restricting push
+  # to master + release tags avoids running the gate twice per PR push.
   push:
-    branches: ["**"]
+    branches: ["master"]
+    tags: ["v*"]
   pull_request:
+
+# Least privilege: the gate only reads the repo — no token write access.
+permissions:
+  contents: read
 
 jobs:
   gate:
