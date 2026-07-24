@@ -33,9 +33,8 @@ def connect(profile: str | None = None) -> Transport:
     is honored and a missing config surfaces as the ``KeyError`` ``doctor`` maps
     to PRECONDITION.
     """
-    from inkbridge.transport.private_cloud import PCClient
-
     from inkbridge.config import active_profile_name
+    from inkbridge.transport.private_cloud import PCClient
 
     name = profile or active_profile_name()
     if name:

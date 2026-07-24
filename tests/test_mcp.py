@@ -123,7 +123,7 @@ def test_dispatch_replace_true_is_idempotent(inject, tmp_path: Path):
     """The MCP default replace=true makes a re-dispatch succeed where the
     cloud's no-overwrite would otherwise raise already_exists."""
     f, manifest_path, ledger_path = _seed_base(tmp_path)
-    kw = dict(manifest_path=str(manifest_path), ledger_path=str(ledger_path))
+    kw = {"manifest_path": str(manifest_path), "ledger_path": str(ledger_path)}
     mcp.dispatch(str(f), **kw)
     payload = mcp.dispatch(str(f), **kw)  # would fail without replace=true
     assert payload["doc_id"] == "form-abc12345"
@@ -335,9 +335,9 @@ def test_no_cli_import():
 
     proc = subprocess.run(
         [sys.executable, "-c",
-         "import inkbridge.mcp, sys; "
-         "sys.exit(1 if 'inkbridge.cli' in sys.modules else 0)"],
-        capture_output=True, text=True)
+         ("import inkbridge.mcp, sys; "
+          "sys.exit(1 if 'inkbridge.cli' in sys.modules else 0)")],
+        capture_output=True, text=True, check=False)
     assert proc.returncode == 0, (
         f"importing inkbridge.mcp pulled in inkbridge.cli\n{proc.stderr}")
 
@@ -356,9 +356,9 @@ def test_import_survives_missing_mcp_dependency():
 
     proc = subprocess.run(
         [sys.executable, "-c",
-         "import sys; sys.modules['mcp'] = None; "
-         "import inkbridge.mcp"],
-        capture_output=True, text=True)
+         ("import sys; sys.modules['mcp'] = None; "
+          "import inkbridge.mcp")],
+        capture_output=True, text=True, check=False)
     assert proc.returncode == 0, (
         f"import failed with mcp hidden\nstderr:\n{proc.stderr}")
 
@@ -376,9 +376,9 @@ def test_main_without_mcp_dependency_prints_friendly_message_and_exits():
 
     proc = subprocess.run(
         [sys.executable, "-c",
-         "import sys; sys.modules['mcp'] = None; "
-         "from inkbridge import mcp; mcp.main()"],
-        capture_output=True, text=True)
+         ("import sys; sys.modules['mcp'] = None; "
+          "from inkbridge import mcp; mcp.main()")],
+        capture_output=True, text=True, check=False)
     assert proc.returncode == int(Exit.USAGE), (
         f"unexpected exit code {proc.returncode}\nstderr:\n{proc.stderr}")
     assert "Traceback" not in proc.stderr, f"raw traceback leaked:\n{proc.stderr}"

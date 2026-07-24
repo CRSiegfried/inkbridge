@@ -39,8 +39,8 @@ class FakeServer:
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
-        ok = lambda extra=None: httpx.Response(200, json={"success": True, **(extra or {})})  # noqa: E731
-        fail = lambda code, msg: httpx.Response(  # noqa: E731
+        ok = lambda extra=None: httpx.Response(200, json={"success": True, **(extra or {})})
+        fail = lambda code, msg: httpx.Response(
             200, json={"success": False, "errorCode": code, "errorMsg": msg})
 
         if path == "/api/official/user/query/random/code":

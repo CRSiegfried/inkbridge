@@ -60,13 +60,12 @@ def file_lock(path: Path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_name(f"{path.name}.lock")
-    lock_file = open(lock_path, "w")
-    try:
+    with open(lock_path, "w") as lock_file:
         _acquire(lock_file)
-        yield
-    finally:
-        _release(lock_file)
-        lock_file.close()
+        try:
+            yield
+        finally:
+            _release(lock_file)
 
 
 def _acquire(lock_file) -> None:

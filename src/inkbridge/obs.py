@@ -27,7 +27,6 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
 
 LOGGER_NAME = "inkbridge"
 
@@ -35,13 +34,13 @@ _FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _DATEFMT = "%H:%M:%S"
 
 
-def get_logger(child: Optional[str] = None) -> logging.Logger:
+def get_logger(child: str | None = None) -> logging.Logger:
     """The ``inkbridge`` logger, or a named child (e.g. ``get_logger("cloud")``)."""
     base = logging.getLogger(LOGGER_NAME)
     return base.getChild(child) if child else base
 
 
-def configure_logging(verbosity: int = 0, log_file: Optional[Path] = None) -> None:
+def configure_logging(verbosity: int = 0, log_file: Path | None = None) -> None:
     """Wire handlers for this process per the requested verbosity / log file.
 
     ``verbosity`` is the ``-v`` count (0 silent, 1 INFO to stderr, ≥2 DEBUG to
@@ -58,7 +57,7 @@ def configure_logging(verbosity: int = 0, log_file: Optional[Path] = None) -> No
     formatter = logging.Formatter(_FORMAT, datefmt=_DATEFMT)
     handlers: list[logging.Handler] = []
 
-    stderr_level: Optional[int] = None
+    stderr_level: int | None = None
     if verbosity >= 2:
         stderr_level = logging.DEBUG
     elif verbosity == 1:
@@ -94,4 +93,4 @@ if not _root_logger.handlers:
 _root_logger.propagate = False
 
 
-__all__ = ["LOGGER_NAME", "get_logger", "configure_logging"]
+__all__ = ["LOGGER_NAME", "configure_logging", "get_logger"]

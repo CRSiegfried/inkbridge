@@ -107,7 +107,7 @@ class PCClient:
         self.token: str | None = None
 
     @classmethod
-    def from_env(cls, env_file: Path | None = None) -> "PCClient":
+    def from_env(cls, env_file: Path | None = None) -> PCClient:
         c = cls(_env("INKBRIDGE_CLOUD_URL", env_file))
         c.login(
             _env("INKBRIDGE_CLOUD_EMAIL", env_file),

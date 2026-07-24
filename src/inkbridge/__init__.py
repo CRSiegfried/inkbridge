@@ -17,11 +17,11 @@ from __future__ import annotations
 __version__ = "0.1.0"
 
 __all__ = [
+    "Transport",   # the transport protocol
     "__version__",
+    "connect",     # the zero-arg transport connector
     "ops",         # in-process operations layer (ops.dispatch/status/collect/...)
     "transport",   # transport seam (backends + connect factory)
-    "Transport",   # the transport protocol
-    "connect",     # the zero-arg transport connector
 ]
 
 

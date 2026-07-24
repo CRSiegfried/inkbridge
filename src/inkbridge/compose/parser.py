@@ -124,10 +124,10 @@ class Comb:
     n: int = 8
 
 
-_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack|comb)\s*:\s*(.+?)\s*\}$", re.S)
+_DIRECTIVE_RE = re.compile(r"^\{\s*(capture|choice|ack|comb)\s*:\s*(.+?)\s*\}$", re.DOTALL)
 _ROWS_RE = re.compile(r"\s+rows\s*=\s*(\d+)\s*$")
 _N_RE = re.compile(r"\s+n\s*=\s*(\d+)\s*$")
-_TASK_RE = re.compile(r"^\[( |x|X)\]\s+(.*)$", re.S)
+_TASK_RE = re.compile(r"^\[( |x|X)\]\s+(.*)$", re.DOTALL)
 
 
 def _directive(text: str):
@@ -219,7 +219,7 @@ def parse(text: str) -> list:
     md = MarkdownIt("commonmark")
     try:
         md.enable("table")
-    except Exception:
+    except ValueError:
         pass  # tables then parse as paragraphs; still renders
     toks = md.parse(text)
 

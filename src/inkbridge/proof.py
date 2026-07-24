@@ -62,7 +62,7 @@ def stamp_pages(manifest: dict) -> dict:
     import numpy as np
 
     h, w = _canvas_shape(manifest)
-    grays: dict[int, "np.ndarray"] = {}
+    grays: dict[int, np.ndarray] = {}
     for cell in manifest["cells"]:
         gray = grays.get(cell["page"])
         if gray is None:

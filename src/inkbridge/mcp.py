@@ -51,7 +51,7 @@ try:
 except ImportError as _e:
     _MCP_IMPORT_ERROR: Exception | None = _e
 
-    class ToolError(Exception):  # noqa: N818 - mirrors mcp's ToolError name
+    class ToolError(Exception):
         """Stand-in for ``mcp.server.fastmcp.exceptions.ToolError`` used only
         while the optional ``mcp`` dependency is missing. Never actually
         raised in that state: main() exits before any tool runs."""
@@ -134,7 +134,7 @@ def _tool_errors():
         yield
     except ToolError:
         raise
-    except BaseException as e:  # noqa: BLE001 — re-raised below, mapped or not
+    except BaseException as e:
         for exc_type, code in _ERROR_CODES:
             if isinstance(e, exc_type):
                 raise ToolError(f"[{code}] {e}") from e
@@ -159,9 +159,8 @@ def compose(
     overrides it with an exact factor. Returns the compose.v1 body: doc_id, the
     ``pdf``/``manifest`` paths (feed them to ``dispatch``), page count, and cell
     count."""
-    from inkbridge.compose import DENSITIES
+    from inkbridge.compose import DENSITIES, compose_from_ir
     from inkbridge.compose import compose as compose_markdown
-    from inkbridge.compose import compose_from_ir
 
     if (source_markdown is None) == (blocks is None):
         raise ToolError(
@@ -269,9 +268,9 @@ def wait_for_response(
 # silently leaves the description empty).
 wait_for_response.__doc__ = (
     "Bounded long-poll until ``doc_id``'s mark arrives — the synchronizing "
-    "verb of the loop. ``timeout_s`` is clamped to %.0f s (loop status/short "
-    "waits for longer). Returns the wait.v1 status row on arrival; errors "
-    "with code ``timeout`` if none lands in the window." % WAIT_CAP_S
+    f"verb of the loop. ``timeout_s`` is clamped to {WAIT_CAP_S:.0f} s (loop "
+    "status/short waits for longer). Returns the wait.v1 status row on "
+    "arrival; errors with code ``timeout`` if none lands in the window."
 )
 wait_for_response = server.tool()(wait_for_response)
 

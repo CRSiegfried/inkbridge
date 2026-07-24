@@ -14,7 +14,6 @@ import json
 import pytest
 
 from inkbridge.compose import compose
-from inkbridge.compose.profiles import MANTA, PROFILES
 from inkbridge.compose.parser import (
     Ack,
     Capture,
@@ -25,6 +24,7 @@ from inkbridge.compose.parser import (
     Table,
     parse,
 )
+from inkbridge.compose.profiles import MANTA, PROFILES
 from inkbridge.convert.targeted import _bbox_to_pixels
 
 KITCHEN_SINK = """\

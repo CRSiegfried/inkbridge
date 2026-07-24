@@ -875,8 +875,8 @@ def doctor(as_json: bool) -> None:
     (missing INKBRIDGE_CLOUD_* config, or the cloud is unreachable). The
     --json result is a doctor.v1 document listing each check.
     """
-    from inkbridge.contract import CliError, Exit, emit_result
     from inkbridge import transport
+    from inkbridge.contract import CliError, Exit, emit_result
 
     checks: list[dict] = []
     with _cloud_errors(as_json):

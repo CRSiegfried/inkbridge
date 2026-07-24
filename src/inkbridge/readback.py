@@ -142,7 +142,7 @@ def ink_hash(gray, *, ink_gray_cutoff: int = INK_GRAY_CUTOFF) -> str:
 
 def read_pages(
     manifest: dict,
-    grays: dict[int, "object"],
+    grays: dict[int, object],
     *,
     ink_gray_cutoff: int = INK_GRAY_CUTOFF,
     ambiguous_floor: float = AMBIGUOUS_FLOOR,

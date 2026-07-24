@@ -43,10 +43,10 @@ def _bbox_to_pixels(
     """
     h, w = shape
     nx, ny, nw, nh = bbox_norm
-    x0 = int(round(nx * w)) - pad_px
-    y0 = int(round(ny * h)) - pad_px
-    x1 = int(round((nx + nw) * w)) + pad_px
-    y1 = int(round((ny + nh) * h)) + pad_px
+    x0 = round(nx * w) - pad_px
+    y0 = round(ny * h) - pad_px
+    x1 = round((nx + nw) * w) + pad_px
+    y1 = round((ny + nh) * h) + pad_px
     x0 = max(0, min(x0, w))
     x1 = max(0, min(x1, w))
     y0 = max(0, min(y0, h))

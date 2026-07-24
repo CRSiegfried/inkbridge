@@ -81,7 +81,7 @@ def test_no_config_file_is_empty_not_error(tmp_path, monkeypatch):
 def test_connect_uses_profile_credentials(config_file, monkeypatch):
     # transport.connect(profile=) builds a client from the profile's url/creds
     # (no env INKBRIDGE_CLOUD_* needed). We stub login to capture what it used.
-    import inkbridge.transport as transport
+    from inkbridge import transport
     from inkbridge.transport.private_cloud import PCClient
 
     captured = {}

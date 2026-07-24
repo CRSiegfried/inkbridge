@@ -210,7 +210,7 @@ def test_atomic_write_survives_crash(monkeypatch, tmp_path: Path):
     ledger.save()
     original = path.read_bytes()
 
-    import inkbridge.atomicio as atomicio
+    from inkbridge import atomicio
 
     def boom(src, dst):  # os.replace stand-in: temp is already written
         raise OSError("simulated crash before rename")
@@ -242,7 +242,7 @@ def test_replace_is_idempotent(client: PCClient, tmp_path: Path):
     # makes it succeed and leaves exactly one remote copy + one ledger entry.
     from inkbridge import ops
 
-    connect = lambda: client  # noqa: E731
+    connect = lambda: client
     f = tmp_path / "form.pdf"
     f.write_bytes(b"%PDF-form")
     manifest_path = tmp_path / "form.manifest.json"
@@ -270,7 +270,7 @@ def test_reconcile_adopts_orphan(client: PCClient, tmp_path: Path):
     # crashed before saving) is re-adopted into the ledger by reconcile.
     from inkbridge import ops
 
-    connect = lambda: client  # noqa: E731
+    connect = lambda: client
     f = tmp_path / "form.pdf"
     f.write_bytes(b"%PDF-form")
     client.push(f, "Document")  # orphan: on the cloud, not in the ledger

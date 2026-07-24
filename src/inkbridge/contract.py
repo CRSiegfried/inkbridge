@@ -79,7 +79,7 @@ class CliError(click.ClickException):
         self.as_json = as_json
         self.details = details or {}
 
-    def show(self, file=None) -> None:  # noqa: ARG002 - click passes a file arg
+    def show(self, file=None) -> None:
         # Exit reason, for the opt-in log (silent by default; see inkbridge.obs).
         # This does NOT alter the stderr envelope below — it only reaches a
         # handler when -v/--log-file is set.

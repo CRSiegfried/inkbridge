@@ -195,7 +195,7 @@ def test_atomic_write_survives_crash(monkeypatch, tmp_path):
     store.update("doc", 1, "first")
     original = path.read_bytes()
 
-    import inkbridge.atomicio as atomicio
+    from inkbridge import atomicio
 
     def boom(src, dst):  # os.replace stand-in: temp is already written
         raise OSError("simulated crash before rename")

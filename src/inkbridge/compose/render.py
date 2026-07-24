@@ -22,7 +22,6 @@ from .celltypes import REGISTRY as CELL_REGISTRY
 from .celltypes import CustomBlock
 from .fonts import BODY, BOLD, BOLDITALIC, ITALIC, MONO, register_fonts, width_px
 from .geometry import BLACK, FAINT, GRAY, DeviceProfile, Px
-from .profiles import MANTA
 from .parser import (
     Ack,
     Capture,
@@ -38,6 +37,7 @@ from .parser import (
     Rule,
     Table,
 )
+from .profiles import MANTA
 
 # level -> (size_pt, rows, underline); all headings render bold.
 _HEADING_STYLE = {1: (22.0, 2, True), 2: (15.0, 2, False), 3: (12.5, 1, False)}
