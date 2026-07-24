@@ -128,9 +128,7 @@ MCP-capable agent — see `docs/how-to/run-the-mcp-server.md`.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). Note that one adjacent tool in the ecosystem
-(`sn2md`) is AGPL-3.0; `inkbridge` only ever shells out to it as an external
-CLI, never imports it as a library, to keep this project's license clean.
+MIT — see [`LICENSE`](LICENSE).
 The package also bundles the Bitstream Vera Mono font used by `compose`,
 under its own permissive license — see
 [`src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT`](src/inkbridge/compose/fonts/VERA-COPYRIGHT.TXT).

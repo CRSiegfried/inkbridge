@@ -17,13 +17,6 @@ depending on anything here — this is a snapshot, not a guarantee.
 - **[supernote_pdf](https://github.com/RohanGautam/supernote_pdf)** — Rust
   (crates.io). Fast batch `.note` → PDF, optimized for archival speed. Worth
   revisiting if `supernotelib` conversion becomes a bottleneck.
-- **[sn2md](https://pypi.org/project/sn2md/)**
-  ([dsummersl/sn2md](https://github.com/dsummersl/sn2md)) — Python,
-  **AGPL-3.0**. Converts `.note`/PDF/PNG → Markdown/Org/HTML via an LLM
-  (OpenAI/Gemini/Ollama), including diagrams-to-Mermaid and LaTeX math. Useful
-  for the "read back the annotation" half of the agent loop. See
-  [licensing notes](#licensing-notes) below before touching this as anything
-  but a subprocess.
 
 ## Cloud / transport
 
@@ -35,9 +28,16 @@ depending on anything here — this is a snapshot, not a guarantee.
 - **[supernote-cli](https://pypi.org/project/supernote-cli/)**
   ([borismus/supernote-cli](https://github.com/borismus/supernote-cli)) —
   Python, MIT. CLI with an `upload` command (S3-signed flow) and
-  `annotation`/`notebook` extraction with OCR/VLM transcription. Closest
-  existing project to the "agentic peripheral" framing this repo is going
-  for — worth reading its upload implementation closely.
+  `annotation`/`notebook` extraction. Its transcription is **local-Ollama-only**
+  (raw HTTP to an Ollama daemon, default `qwen3-vl:8b`; no cloud/OpenAI/Claude
+  path) — accurate but slow, and the feature is early (v0.3.1 as of 2026-07, no
+  unit tests over the OCR path). The image→text step is a standalone
+  `ocr_image(PIL.Image) -> str`, i.e. cleanly separable from `.note` parsing, so
+  it maps onto a per-region crop; but it's thin enough (a resize + one prompt +
+  one POST) that inkbridge is better served by its own provider-agnostic VLM call
+  on a `composite` crop, borrowing supernote-cli's prompt as prior art rather than
+  importing it. Closest existing project to the "agentic peripheral" framing this
+  repo is going for — worth reading its upload implementation closely.
 - **[supernote-cloud-python](https://github.com/bwhitman/supernote-cloud-python)**
   — Python, older, appears less maintained.
 - **[supernote-cloud-api](https://github.com/adrianba/supernote-cloud-api)**
@@ -101,10 +101,8 @@ That is what `inkbridge` adds — everything else above is reused, not rebuilt.
 
 - `inkbridge` itself is MIT.
 - `supernotelib`, `sncloud`, `supernote` (allenporter) are Apache-2.0;
-  `supernote-cli` is MIT. All fine to import directly as Python
-  dependencies.
-- `sn2md` is **AGPL-3.0**. Importing it as a library would pull `inkbridge`
-  into AGPL obligations for network-exposed use. If/when `inkbridge` wants
-  its LLM-transcription features, invoke `sn2md` as an external subprocess
-  (separate process boundary) rather than `import sn2md`, and say so
-  explicitly in the code that does it.
+  `supernote-cli` is MIT. All are license-compatible to import directly as
+  Python dependencies. (License-OK is not the same as worth-it: the survey
+  above recommends borrowing `supernote-cli`'s transcription prompt as prior
+  art rather than importing its thin OCR path — an engineering call, not a
+  licensing one.)
