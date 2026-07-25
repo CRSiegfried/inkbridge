@@ -45,11 +45,20 @@ Contributions and Manta owners willing to test the device-facing commands are
 welcome — open a GitHub issue to discuss a change, or send a pull request
 directly.
 
-## Install (dev)
+## Install
+
+Not on PyPI yet — install straight from the repo. For a CLI tool, `pipx`
+(or `uv tool`) keeps it in its own isolated environment:
+
+```bash
+pipx install git+https://github.com/CRSiegfried/inkbridge
+inkbridge --help
+```
+
+Working on inkbridge itself? Clone and install editable with the dev extras:
 
 ```bash
 pip install -e ".[dev]"
-inkbridge --help
 ```
 
 ## Using it
