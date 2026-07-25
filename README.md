@@ -45,11 +45,20 @@ Contributions and Manta owners willing to test the device-facing commands are
 welcome — open a GitHub issue to discuss a change, or send a pull request
 directly.
 
-## Install (dev)
+## Install
+
+Not on PyPI yet — install straight from the repo. For a CLI tool, `pipx`
+(or `uv tool`) keeps it in its own isolated environment:
+
+```bash
+pipx install git+https://github.com/CRSiegfried/inkbridge
+inkbridge --help
+```
+
+Working on inkbridge itself? Clone and install editable with the dev extras:
 
 ```bash
 pip install -e ".[dev]"
-inkbridge --help
 ```
 
 ## Using it
@@ -69,7 +78,8 @@ inkbridge composite notes.pdf notes.pdf.mark -o capture.png
 
 See `examples/` for sampler Markdown documents (`sampler_form.md`,
 `sampler_typography.md`) exercising every input primitive the compose
-renderer supports, alongside their rendered output.
+renderer supports. Render them with `inkbridge compose` to inspect the
+generated PDF and manifest output.
 
 The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`,
 `ls`, `rm`, `wait`, `reconcile`) talk to a Supernote private-cloud deployment
