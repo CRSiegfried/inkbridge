@@ -28,16 +28,18 @@ depending on anything here — this is a snapshot, not a guarantee.
 - **[supernote-cli](https://pypi.org/project/supernote-cli/)**
   ([borismus/supernote-cli](https://github.com/borismus/supernote-cli)) —
   Python, MIT. CLI with an `upload` command (S3-signed flow) and
-  `annotation`/`notebook` extraction. Its transcription is **local-Ollama-only**
+  `annotation`/`notebook` extraction. Its transcription (a caller-side concern for
+  inkbridge, per ADR-0011) is **local-Ollama-only**
   (raw HTTP to an Ollama daemon, default `qwen3-vl:8b`; no cloud/OpenAI/Claude
   path) — accurate but slow, and the feature is early (v0.3.1 as of 2026-07, no
   unit tests over the OCR path). The image→text step is a standalone
-  `ocr_image(PIL.Image) -> str`, i.e. cleanly separable from `.note` parsing, so
-  it maps onto a per-region crop; but it's thin enough (a resize + one prompt +
-  one POST) that inkbridge is better served by its own provider-agnostic VLM call
-  on a `composite` crop, borrowing supernote-cli's prompt as prior art rather than
-  importing it. Closest existing project to the "agentic peripheral" framing this
-  repo is going for — worth reading its upload implementation closely.
+  `ocr_image(PIL.Image) -> str`, i.e. cleanly separable from `.note` parsing.
+  inkbridge does **not** own this step: transcription is out of scope
+  ([ADR-0011](adr/0011-transcription-out-of-scope.md)) — inkbridge hands off a
+  VLM-ready `composite` crop and the caller transcribes it. supernote-cli's prompt
+  is prior art *for that caller*, not something inkbridge imports. Still the closest
+  existing project to the "agentic peripheral" framing this repo is going for —
+  worth reading its upload implementation closely.
 - **[supernote-cloud-python](https://github.com/bwhitman/supernote-cloud-python)**
   — Python, older, appears less maintained.
 - **[supernote-cloud-api](https://github.com/adrianba/supernote-cloud-api)**
@@ -102,7 +104,7 @@ That is what `inkbridge` adds — everything else above is reused, not rebuilt.
 - `inkbridge` itself is MIT.
 - `supernotelib`, `sncloud`, `supernote` (allenporter) are Apache-2.0;
   `supernote-cli` is MIT. All are license-compatible to import directly as
-  Python dependencies. (License-OK is not the same as worth-it: the survey
-  above recommends borrowing `supernote-cli`'s transcription prompt as prior
-  art rather than importing its thin OCR path — an engineering call, not a
-  licensing one.)
+  Python dependencies. (License-OK is not the same as worth-it: inkbridge does not
+  import any OCR/transcription path at all — that step is out of scope
+  ([ADR-0011](adr/0011-transcription-out-of-scope.md)) and belongs to the caller,
+  which may borrow `supernote-cli`'s transcription prompt as prior art.)

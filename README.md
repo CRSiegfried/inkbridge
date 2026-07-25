@@ -6,8 +6,11 @@ chain PDFs together into a single document.
 
 The long-term goal is to treat the Manta as an I/O peripheral for AI agents:
 an agent drafts or fetches a document, `inkbridge` pushes it to the device,
-you annotate it by hand, and `inkbridge` pulls the annotated result back for
-the agent to read (OCR/VLM transcription, diagrams, math, the works).
+you annotate it by hand, and `inkbridge` pulls the annotated result back and
+composites it into a VLM-ready image for the agent to read. Transcription
+itself — OCR/VLM turning ink into text — is the calling agent's job, not
+`inkbridge`'s (see [ADR-0011](docs/adr/0011-transcription-out-of-scope.md)):
+`inkbridge` hands off a clean artifact and stops there.
 
 ## Why this exists
 

@@ -43,3 +43,4 @@ rather than re-deriving the reasoning.
 - [0008 — Per-cell decision bands in the manifest; area-inverse scaling from one calibration](0008-per-cell-decision-bands.md) — Accepted
 - [0009 — A cell-type registry and a block-IR compose entry point](0009-cell-type-registry-and-block-ir.md) — Accepted
 - [0010 — Named-profile config (`config.toml`) with a per-profile ledger](0010-named-profile-config.md) — Accepted
+- [0011 — Semantic transcription is out of scope; the boundary ends at the composite handoff](0011-transcription-out-of-scope.md) — Accepted
