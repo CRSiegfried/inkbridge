@@ -69,7 +69,8 @@ inkbridge composite notes.pdf notes.pdf.mark -o capture.png
 
 See `examples/` for sampler Markdown documents (`sampler_form.md`,
 `sampler_typography.md`) exercising every input primitive the compose
-renderer supports, alongside their rendered output.
+renderer supports. Render them with `inkbridge compose` to inspect the
+generated PDF and manifest output.
 
 The device-facing commands (`push`, `pull`, `dispatch`, `status`, `collect`,
 `ls`, `rm`, `wait`, `reconcile`) talk to a Supernote private-cloud deployment
