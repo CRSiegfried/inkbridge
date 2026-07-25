@@ -72,11 +72,12 @@ Analysis 0007 (unpublished).
 2. inkbridge push <file> --to notebook       # lands on the Manta
 3. Human writes on the device.
 4. inkbridge pull <notebook> --since <ts>    # retrieves the updated .note
-5. inkbridge convert --ocr                    # .note -> text/markdown
-6. Agent reads the transcription and acts on it.
+5. Agent transcribes the pulled/composited artifact and acts on it.
+   #   (OCR/VLM is the caller's job — inkbridge hands off a VLM-ready
+   #    image and stops; see ADR-0011. It ships no `convert --ocr`.)
 ```
 
-Steps 1-2 and 4-6 are the parts worth automating first; step 3 is
+Steps 1-2 and 4-5 are the parts worth automating first; step 3 is
 irreducibly manual (that's the point of a pen-and-paper device).
 
 **Note (annotated PDFs).** The step-4 comment above assumes a `.note` comes
@@ -91,13 +92,15 @@ mechanics of that compositing are an open, not-yet-started investigation
 
 ## Targeted reads: cheap polling for the agent loop
 
-Step 4-6 of the agent loop above (`pull` → `convert --ocr` → agent reads
-transcription) is fine for "give me the full transcription of what changed,"
-but it's the wrong tool for a narrower, very common case: the agent just
-wants to know whether the user marked a specific checkbox on a specific
-page — e.g. "approve? `[ ]`" on a form the agent pushed earlier. Running a
-full notebook conversion plus an OCR/VLM call to answer a yes/no question is
-needless latency and cost, and it doesn't scale to polling.
+Steps 4-5 of the agent loop above (`pull`, then the agent transcribes the
+pulled artifact) are fine for "give me the full transcription of what
+changed," but that's the wrong tool for a narrower, very common case: the
+agent just wants to know whether the user marked a specific checkbox on a
+specific page — e.g. "approve? `[ ]`" on a form the agent pushed earlier.
+Rendering the whole page and handing it to an OCR/VLM (a caller-side cost,
+per ADR-0011) to answer a yes/no question is needless latency and cost, and
+it doesn't scale to polling. inkbridge answers that class of question itself,
+deterministically, without a model.
 
 The `.note` format's own structure supports doing much better — see
 `note-format.md` (local archive, unpublished)
@@ -105,9 +108,9 @@ for the detail. In short: `supernotelib` already exposes single-page decode
 (`convert(page_number)`) separately from whole-notebook conversion, and
 metadata (page count, keywords, links) appears cheap to read independent of
 stroke/ink decoding. That supports a `convert/targeted.py` primitive —
-"was region R on page N marked" — sitting alongside the full
-`convert/notebook.py` pipeline, for the agent loop to poll cheaply instead
-of re-running full transcription every time.
+"was region R on page N marked" — sitting alongside the full-page
+`convert/notebook.py` render pipeline, for the agent loop to poll cheaply
+instead of rendering and re-transcribing the whole page every time.
 
 This is a Phase 1.5-ish concern: it doesn't block the initial read/write
 path (Phase 1/2 in `roadmap.md` (local archive, unpublished)), but `convert/notebook.py`'s
