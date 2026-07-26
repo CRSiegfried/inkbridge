@@ -52,8 +52,9 @@ point at the reasoning behind a decision:
 
 New documentation follows [Diataxis](https://diataxis.fr/), extended with the
 two categories Diataxis has no answer for (decision records and their
-provenance). Pick the category by what the reader needs, not by subject
-matter:
+provenance) — see [ADR-0012](adr/0012-manual-framework-enforcement.md) for the
+framework and why it is enforced at review time rather than by tooling. Pick
+the category by what the reader needs, not by subject matter:
 
 - **`how-to/`** — a task recipe for someone who already knows what they want
   to accomplish. Goal-oriented, assumes context.

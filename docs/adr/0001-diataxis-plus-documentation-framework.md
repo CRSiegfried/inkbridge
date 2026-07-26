@@ -1,21 +1,20 @@
 # ADR-0001: Diataxis+ documentation framework
 
-Status: Accepted
+Status: Superseded by [ADR-0012](0012-manual-framework-enforcement.md)
 Date: 2026-07-18
 
-> **Update 2026-07-26:** the enforcement mechanism described below has been
-> withdrawn. The `docs-maintainer` subagent definition is no longer
-> distributed in this repository (shipping assistant config imposed one
-> contributor's tooling on everyone), and the accompanying `CLAUDE.md` rule
-> requiring its review is gone with it. The **framework itself — the
-> categories, their meanings, and the ADR immutability rule — still stands**;
-> it is now documented for humans under "Contributing docs" in
-> [`docs/README.md`](../README.md#contributing-docs) and applied by review at
-> pull-request time rather than by a subagent. References to
-> `.claude/agents/docs-maintainer.md` in the body below are historical and no
-> longer resolve. Note that this note records the loss of an enforcement
-> mechanism, not a change to the categories the Decision adopts; if the
-> framework itself is ever revisited, that requires a superseding ADR.
+> **Superseded 2026-07-26.** The Decision below bundled two choices: the
+> Diataxis+ categories, and enforcing them with a checked-in `docs-maintainer`
+> subagent. The subagent definition and `CLAUDE.md` are no longer tracked in
+> this repository, which changes the Decision and therefore calls for
+> supersession rather than an update note.
+> **[ADR-0012](0012-manual-framework-enforcement.md) is now the canonical
+> record**: it re-adopts the categories below verbatim and moves enforcement to
+> ordinary pull-request review against the written standard in
+> [`docs/README.md`](../README.md#contributing-docs). The framework is
+> unchanged and no document needs re-placing. References to
+> `.claude/agents/docs-maintainer.md` and `CLAUDE.md` below are historical and
+> no longer resolve.
 
 ## Context
 
