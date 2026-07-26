@@ -3,6 +3,13 @@
 Status: Accepted
 Date: 2026-07-22
 
+> **Update 2026-07-26:** `CLAUDE.md` is no longer tracked in this repository,
+> so the links to it below no longer resolve. The public/local rule it stated
+> is unchanged and now lives under "Public vs. local" in
+> [`CONTRIBUTING.md`](../../CONTRIBUTING.md), which carries the same
+> ADR-0005 exception this record establishes. The carve-out itself is
+> unaffected.
+
 ## Context
 
 [`CLAUDE.md`](../../CLAUDE.md) draws one bright line: "Everything tracked

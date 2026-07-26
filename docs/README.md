@@ -50,7 +50,31 @@ point at the reasoning behind a decision:
 
 ## Contributing docs
 
-Any new documentation file, or a substantive edit to an existing one, must be
-reviewed by the `docs-maintainer` subagent before it is considered done — see
-the rule in [`CLAUDE.md`](../CLAUDE.md) and the agent definition in
-[`.claude/agents/docs-maintainer.md`](../.claude/agents/docs-maintainer.md).
+New documentation follows [Diataxis](https://diataxis.fr/), extended with the
+two categories Diataxis has no answer for (decision records and their
+provenance). Pick the category by what the reader needs, not by subject
+matter:
+
+- **`how-to/`** — a task recipe for someone who already knows what they want
+  to accomplish. Goal-oriented, assumes context.
+- **`reference/`** — a complete, lookup-oriented description of a surface
+  (flags, schemas, exit codes). Claims to be exhaustive and current.
+- **explainers** (currently top-level, e.g. [`architecture.md`](architecture.md),
+  [`ecosystem.md`](ecosystem.md)) — understanding-oriented background: how
+  the pieces fit and why.
+- **[`adr/`](adr/)** — one record per significant, hard-to-reverse decision.
+  Sequential and **immutable once accepted**: don't rewrite an accepted ADR's
+  Context or Decision, supersede it with a new one. The sole exception is a
+  dated update note for an anticipated, decision-preserving cleanup. Full
+  rules and the index: [`adr/README.md`](adr/README.md); new records use
+  [`adr/template.md`](adr/template.md).
+
+A doc's category is a claim about its epistemic status, so putting a piece in
+the wrong one misleads the reader — prefer moving a doc over letting a
+category drift. Keep relative links working when you move one, and add the
+entry to the map above.
+
+Note that the analysis series described under
+[Citation conventions](#citation-conventions) is unpublished; if your change
+depends on one, carry the settled result into an ADR rather than linking to
+something readers of this repository cannot open.

@@ -63,12 +63,12 @@ build: raise Python floor to 3.11, drop the tomli backport
 ## Documentation changes
 
 Public docs live in `docs/` — Diataxis how-tos/reference/explainers plus
-`docs/adr/` for decisions; see `docs/README.md` for the map. Any new doc file
-or substantive edit must be reviewed by the `docs-maintainer` before it is
-considered done (the rule in `CLAUDE.md`). Don't rewrite an accepted ADR's
-Context or Decision after the fact — supersede it with a new ADR, or, for an
-anticipated decision-preserving cleanup, add a dated update note above the
-Context section.
+`docs/adr/` for decisions. Follow the placement standard in
+[`docs/README.md`](docs/README.md#contributing-docs), which covers how to pick
+a category and the conventions each one carries. Don't rewrite an accepted
+ADR's Context or Decision after the fact — supersede it with a new ADR, or,
+for an anticipated decision-preserving cleanup, add a dated update note above
+the Context section.
 
 ## License
 
