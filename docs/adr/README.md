@@ -33,7 +33,7 @@ rather than re-deriving the reasoning.
 
 ## Index
 
-- [0001 — Diataxis+ documentation framework](0001-diataxis-plus-documentation-framework.md) — Accepted
+- [0001 — Diataxis+ documentation framework](0001-diataxis-plus-documentation-framework.md) — Superseded by ADR-0012
 - [0002 — Agent-facing CLI output and exit-code contract](0002-agent-facing-cli-contract.md) — Accepted
 - [0003 — Response state as a materialized answers artifact, monitoring delegated](0003-materialized-answers-artifact.md) — Accepted
 - [0004 — No page-identity fiducial; positional page mapping under a dense-mark assumption](0004-no-page-fiducial.md) — Accepted
@@ -44,3 +44,4 @@ rather than re-deriving the reasoning.
 - [0009 — A cell-type registry and a block-IR compose entry point](0009-cell-type-registry-and-block-ir.md) — Accepted
 - [0010 — Named-profile config (`config.toml`) with a per-profile ledger](0010-named-profile-config.md) — Accepted
 - [0011 — Semantic transcription is out of scope; the boundary ends at the composite handoff](0011-transcription-out-of-scope.md) — Accepted
+- [0012 — Re-adopt the Diataxis+ framework with review-time enforcement, no checked-in subagent](0012-manual-framework-enforcement.md) — Accepted
