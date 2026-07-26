@@ -1,5 +1,4 @@
 __pycache__/
-.claude/scheduled_tasks.lock
 *.pyc
 *.egg-info/
 .pytest_cache/
@@ -10,6 +9,12 @@ dist/
 build/
 .DS_Store
 uv.lock
+
+# AI-assistant scratch config — tooling preferences of whoever happens to be
+# working here, not project convention. Kept local so the repo stays neutral
+# about how contributors work.
+.claude/
+CLAUDE.md
 
 # Device credentials / local captures — never commit these
 *.env

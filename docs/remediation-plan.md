@@ -760,7 +760,7 @@ resolvable doc id and does not match the gate). Check run 2026-07-23:
 matches** (full gate: 190 passed, ruff clean, proof exit 0).
 
 Source docstrings reference "Analysis 0009/0012", "ADR-0002/0003/0004", etc.,
-but per [`CLAUDE.md`](../CLAUDE.md) all docs live in gitignored
+but per [`CONTRIBUTING.md`](../CONTRIBUTING.md) all docs live in gitignored
 `deploy/local/docs-archive/`. A public reader gets citations to documents
 that don't exist for them.
 

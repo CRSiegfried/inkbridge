@@ -3,6 +3,20 @@
 Status: Accepted
 Date: 2026-07-18
 
+> **Update 2026-07-26:** the enforcement mechanism described below has been
+> withdrawn. The `docs-maintainer` subagent definition is no longer
+> distributed in this repository (shipping assistant config imposed one
+> contributor's tooling on everyone), and the accompanying `CLAUDE.md` rule
+> requiring its review is gone with it. The **framework itself — the
+> categories, their meanings, and the ADR immutability rule — still stands**;
+> it is now documented for humans under "Contributing docs" in
+> [`docs/README.md`](../README.md#contributing-docs) and applied by review at
+> pull-request time rather than by a subagent. References to
+> `.claude/agents/docs-maintainer.md` in the body below are historical and no
+> longer resolve. Note that this note records the loss of an enforcement
+> mechanism, not a change to the categories the Decision adopts; if the
+> framework itself is ever revisited, that requires a superseding ADR.
+
 ## Context
 
 `inkbridge` had four flat docs (`architecture.md`, `ecosystem.md`,
